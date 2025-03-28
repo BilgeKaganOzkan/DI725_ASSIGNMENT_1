@@ -1,0 +1,42 @@
+{
+    "issue_area": {
+        "top_negative_categories": [
+            "Order",
+            "Shipping",
+            "Cancellations and returns"
+        ],
+        "relationship_description": "Top issue_area categories with negative sentiment: Order, Shipping, Cancellations and returns"
+    },
+    "issue_category": {
+        "top_negative_categories": [
+            "Availability of Faster Delivery Options",
+            "Product Availability for Shipping",
+            "Miscellaneous"
+        ],
+        "relationship_description": "Top issue_category categories with negative sentiment: Availability of Faster Delivery Options, Product Availability for Shipping, Miscellaneous"
+    },
+    "product_category": {
+        "top_negative_categories": [
+            "Men/Women/Kids",
+            "Appliances",
+            "Electronics"
+        ],
+        "relationship_description": "Top product_category categories with negative sentiment: Men/Women/Kids, Appliances, Electronics"
+    },
+    "issue_complexity": {
+        "top_negative_categories": [
+            "high",
+            "medium",
+            "less"
+        ],
+        "relationship_description": "Top issue_complexity categories with negative sentiment: high, medium, less"
+    },
+    "agent_experience_level": {
+        "top_negative_categories": [
+            "junior",
+            "experienced",
+            "inexperienced"
+        ],
+        "relationship_description": "Top agent_experience_level categories with negative sentiment: junior, experienced, inexperienced"
+    }
+}

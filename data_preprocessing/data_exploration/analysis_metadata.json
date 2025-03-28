@@ -1,0 +1,67 @@
+{
+    "dataset_size": 1000,
+    "sentiment_distribution": {
+        "neutral": 552,
+        "negative": 421,
+        "positive": 27
+    },
+    "avg_conversation_length": 2130.763,
+    "avg_customer_text_length": 624.413,
+    "avg_agent_text_length": 1344.082,
+    "avg_customer_turns": 7.674,
+    "avg_agent_turns": 8.325,
+    "top_distinctive_words_by_sentiment": {
+        "neutral": [
+            "warranty",
+            "mobile",
+            "understand",
+            "tell",
+            "order",
+            "email",
+            "purchase",
+            "account",
+            "like",
+            "try",
+            "code",
+            "ordered",
+            "doe",
+            "oh",
+            "replacement"
+        ],
+        "negative": [
+            "help",
+            "refund",
+            "order",
+            "want",
+            "shipping",
+            "delivered",
+            "urgently",
+            "yet",
+            "receive",
+            "long",
+            "issue",
+            "address",
+            "soon",
+            "supervisor",
+            "week"
+        ],
+        "positive": [
+            "status",
+            "seller",
+            "confirm",
+            "wanted",
+            "information",
+            "placed",
+            "looking",
+            "next",
+            "date",
+            "policy",
+            "estimated",
+            "emily",
+            "sarah",
+            "know",
+            "place"
+        ]
+    },
+    "analysis_timestamp": "2025-03-28 21:41:20"
+}

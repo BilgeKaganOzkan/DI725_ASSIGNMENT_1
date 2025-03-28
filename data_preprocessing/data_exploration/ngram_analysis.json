@@ -1,0 +1,78 @@
+{
+    "bigrams": {
+        "neutral": [
+            "thank help",
+            "order number",
+            "email address",
+            "help thank",
+            "mobile number",
+            "hi sarah",
+            "email com",
+            "recently purchased",
+            "sure order",
+            "thank goodbye"
+        ],
+        "negative": [
+            "order number",
+            "thank help",
+            "email address",
+            "hi sarah",
+            "sure order",
+            "want return",
+            "email com",
+            "yes please",
+            "okay thank",
+            "help thank"
+        ],
+        "positive": [
+            "thank help",
+            "order status",
+            "order number",
+            "help thank",
+            "hi sarah",
+            "wanted confirm",
+            "placed order",
+            "confirm order",
+            "help sarah",
+            "delivery date"
+        ]
+    },
+    "trigrams": {
+        "neutral": [
+            "sure order number",
+            "thank help thank",
+            "number email address",
+            "thank help sarah",
+            "mobile number email",
+            "yes order number",
+            "help thank goodbye",
+            "hi sarah recently",
+            "help sarah thank",
+            "email address john"
+        ],
+        "negative": [
+            "sure order number",
+            "puts customer hold",
+            "number email address",
+            "yes order number",
+            "agent puts customer",
+            "thank help thank",
+            "okay thank help",
+            "anything else assist",
+            "thank help sarah",
+            "want return get"
+        ],
+        "positive": [
+            "thank help thank",
+            "wanted confirm order",
+            "confirm order status",
+            "yes order number",
+            "order status yes",
+            "agent puts customer",
+            "puts customer hold",
+            "estimated delivery date",
+            "thank help sarah",
+            "thank much help"
+        ]
+    }
+}

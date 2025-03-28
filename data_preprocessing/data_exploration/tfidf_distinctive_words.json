@@ -1,0 +1,53 @@
+{
+    "neutral": [
+        "warranty",
+        "mobile",
+        "understand",
+        "tell",
+        "order",
+        "email",
+        "purchase",
+        "account",
+        "like",
+        "try",
+        "code",
+        "ordered",
+        "doe",
+        "oh",
+        "replacement"
+    ],
+    "negative": [
+        "help",
+        "refund",
+        "order",
+        "want",
+        "shipping",
+        "delivered",
+        "urgently",
+        "yet",
+        "receive",
+        "long",
+        "issue",
+        "address",
+        "soon",
+        "supervisor",
+        "week"
+    ],
+    "positive": [
+        "status",
+        "seller",
+        "confirm",
+        "wanted",
+        "information",
+        "placed",
+        "looking",
+        "next",
+        "date",
+        "policy",
+        "estimated",
+        "emily",
+        "sarah",
+        "know",
+        "place"
+    ]
+}

@@ -1,0 +1,11 @@
+,sentiment_cat,sentiment_trend,count
+0,Negative,improving,262
+1,Negative,neutral,3
+2,Negative,stable,112
+3,Negative,worsening,44
+4,Neutral,improving,216
+5,Neutral,stable,204
+6,Neutral,worsening,132
+7,Positive,improving,11
+8,Positive,stable,12
+9,Positive,worsening,4

@@ -1,0 +1,12 @@
+{
+    "counts": {
+        "neutral": 552,
+        "negative": 421,
+        "positive": 27
+    },
+    "percentages": {
+        "neutral": 55.2,
+        "negative": 42.1,
+        "positive": 2.7
+    }
+}

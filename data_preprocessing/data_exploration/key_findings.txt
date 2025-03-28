@@ -1,0 +1,6 @@
+Dataset contains 1000 conversations with sentiment distribution: {'neutral': np.int64(552), 'negative': np.int64(421), 'positive': np.int64(27)}
+Negative sentiment conversations are typically longer (2398.8 chars vs. 1948.3 chars for neutral)
+Negative sentiment conversations have more customer turns (8.1 vs. 7.4 for neutral)
+Most important features for sentiment prediction: sentiment_volatility, conversation_length, agent_word_count
+Top distinctive words for negative sentiment: help, refund, order, want, shipping
+Top distinctive words for positive sentiment: status, seller, confirm, wanted, information

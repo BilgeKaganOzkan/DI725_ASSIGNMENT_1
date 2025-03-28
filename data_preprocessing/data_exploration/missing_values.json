@@ -1,0 +1,14 @@
+{
+    "issue_area": 0,
+    "issue_category": 0,
+    "issue_sub_category": 0,
+    "issue_category_sub_category": 0,
+    "customer_sentiment": 0,
+    "product_category": 0,
+    "product_sub_category": 0,
+    "issue_complexity": 0,
+    "agent_experience_level": 0,
+    "agent_experience_level_desc": 0,
+    "conversation": 0,
+    "total": 0
+}
