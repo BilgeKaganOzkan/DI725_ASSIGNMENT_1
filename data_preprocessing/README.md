@@ -11,6 +11,24 @@ The `data_explorer.py` script performs comprehensive exploratory data analysis o
 - Extract distinctive linguistic markers for different sentiment categories
 - Generate visualizations and statistics to support data-driven decisions
 
+### Recent Updates
+
+The codebase has received the following improvements:
+
+1. **Code Standardization**: All code comments, documentation strings, and variable names have been standardized to English for consistency across the project.
+
+2. **Enhanced Text Preprocessing**: The `preprocess_for_word_analysis` function has been optimized and moved to the global scope for better reusability across both main exploration and LLM-specific exploration functions.
+
+3. **Improved Integration**: A bridge function `get_exploration_findings()` has been added to facilitate seamless integration between the data exploration pipeline and the LLM preprocessing pipeline. This function:
+   - Ensures complete exploration is run when needed
+   - Creates appropriate output directories for LLM exploration
+   - Copies key analysis results between directories for consistency
+   - Returns processed data and findings for use in LLM fine-tuning
+
+4. **N-gram and Word Analysis**: The n-gram generation and word analysis components have been refined to produce more meaningful and insightful outputs through better stop word filtering and content-focused processing.
+
+These updates ensure that the data exploration process is more modular, consistent, and produces high-quality analytical outputs for sentiment classification model development.
+
 ### Methodology
 
 The script performs a multi-layered analysis:

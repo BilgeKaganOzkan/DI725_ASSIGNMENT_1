@@ -170,15 +170,52 @@ def count_exclamation_marks(text):
     return text.count('!')
 
 def get_ngrams(text, n=2):
-    """Extract n-grams from text."""
+    """Extract meaningful n-grams from text.
+    Focuses on content-rich phrases by removing stop words."""
     if not isinstance(text, str) or not text.strip():
         return []
     
-    # Tokenize using NLTK for better handling
-    tokens = word_tokenize(text.lower())
+    # Basic preprocessing to standardize text
+    text = text.lower()
+    text = re.sub(r'[^\w\s]', ' ', text)
+    text = re.sub(r'\b\d+\b', '', text)
+    text = re.sub(r'\s+', ' ', text).strip()
     
-    # Generate n-grams
-    n_grams = list(ngrams(tokens, n))
+    # Tokenize using NLTK for better handling
+    tokens = word_tokenize(text)
+    
+    # Define specific stop words to remove for n-grams
+    # For n-grams, we want to be more selective about what we remove
+    # to retain meaningful phrases
+    stop_words = set(stopwords.words('english'))
+    
+    # Common words that don't add meaning in n-grams
+    ngram_stop_words = {
+        'would', 'could', 'should', 'please', 'thank', 'thanks',
+        'hello', 'hi', 'hey', 'okay', 'ok', 'yes', 'no', 'yeah',
+        'bye', 'goodbye', 'welcome', 'appreciated', 'got', 'get',
+        'will', 'shall', 'all', 'ive', 'im', 'thats', 'its',
+        'just', 'also', 'right', 'actually', 'really', 'use'
+    }
+    
+    # Use a smaller set of stop words to preserve more phrase structure
+    filtered_stop_words = ngram_stop_words.union(
+        {word for word in stop_words if len(word) <= 3}
+    )
+    
+    # Filter out only common stop words, keeping more content words
+    filtered_tokens = [
+        token for token in tokens 
+        if token not in filtered_stop_words and len(token) > 2 and token.isalpha()
+    ]
+    
+    # Generate n-grams only from meaningful tokens
+    if len(filtered_tokens) < n:
+        return []
+    
+    n_grams = list(ngrams(filtered_tokens, n))
+    
+    # Return joined n-grams
     return [' '.join(g) for g in n_grams]
 
 # Analysis functions
@@ -348,35 +385,54 @@ def analyze_sentiment_changes(conversation):
     }
 
 def compute_tf_idf_by_sentiment(df, text_column, sentiment_column):
-    """Compute TF-IDF scores for each sentiment class."""
-    # Add custom stop words common in customer service
+    """Compute TF-IDF scores to find distinctive words for each sentiment class.
+    Enhanced to find truly distinctive words with higher discriminative power."""
+    
+    # Comprehensive set of stop words
     stop_words = set(stopwords.words('english'))
-    custom_stop_words = {
-        'would', 'could', 'should', 'please', 'thank', 'thanks', 'hello', 'hi',
-        'hey', 'okay', 'ok', 'yes', 'no', 'sure', 'well', 'good', 'great', 
-        'got', 'get', 'let', 'going', 'will', 'all', 'right', 'ive', 'im', 'thats',
-        'its', 'just', 'see', 'can', 'may', 'might', 'must', 'need', 'sir',
-        'maam', 'madam', 'ms', 'mr', 'miss', 'today', 'tomorrow', 'yesterday',
-        'now', 'then', 'here', 'there', 'where', 'how', 'what', 'who', 'why',
-        'call', 'calling', 'called', 'say', 'said', 'says', 'also', 'alright'
+    customer_service_common = {
+        # Greetings and formalities
+        'would', 'could', 'should', 'please', 'thank', 'thanks', 'hello', 'hi', 'hey',
+        'okay', 'ok', 'yes', 'yep', 'yeah', 'sure', 'well', 'good', 'great', 'welcome',
+        'goodbye', 'bye', 'welcome', 'appreciate', 'assist', 'assistance', 'helping',
+        
+        # Common verbs without context
+        'got', 'get', 'getting', 'let', 'going', 'go', 'come', 'see', 'know', 'need',
+        'want', 'make', 'take', 'put', 'ask', 'tell', 'told', 'said', 'says',
+        
+        # Pronouns and names
+        'sir', 'maam', 'madam', 'ms', 'mr', 'miss', 'dear', 'name',
+        
+        # Time expressions
+        'today', 'tomorrow', 'yesterday', 'now', 'then', 'here', 'there',
+        
+        # Question words
+        'where', 'how', 'what', 'who', 'why', 'when',
+        
+        # Common customer service verbs
+        'call', 'calling', 'called', 'say', 'said', 'says', 'solve', 'resolved',
+        
+        # Other fillers
+        'also', 'alright', 'actually', 'basically', 'definitely', 'absolutely'
     }
-    all_stop_words = stop_words.union(custom_stop_words)
+    all_stop_words = stop_words.union(customer_service_common)
     
     sentiment_groups = {}
     sentiment_differential_words = {}
     
+    # First run: basic TF-IDF to find candidate words
     for sentiment in df[sentiment_column].unique():
         sentiment_docs = df[df[sentiment_column] == sentiment][text_column]
         
         if len(sentiment_docs) > 0 and sentiment_docs.str.strip().str.len().sum() > 0:
             try:
-                # Use TF-IDF to find distinctive words
+                # More specific TF-IDF settings
                 tfidf_vectorizer = TfidfVectorizer(
-                    max_features=50,
+                    max_features=100,  # Increase to find more candidates
                     stop_words=list(all_stop_words),
-                    min_df=2,
-                    max_df=0.8,
-                    ngram_range=(1, 1)
+                    min_df=2,  # Appear in at least 2 documents
+                    max_df=0.7,  # More restrictive upper bound (was 0.8)
+                    ngram_range=(1, 1)  # Unigrams only
                 )
                 
                 sentiment_tfidf = tfidf_vectorizer.fit_transform(sentiment_docs)
@@ -386,7 +442,8 @@ def compute_tf_idf_by_sentiment(df, text_column, sentiment_column):
                 sentiment_groups[sentiment] = {
                     'docs': sentiment_docs,
                     'features': sentiment_feature_names,
-                    'tfidf': sentiment_tfidf
+                    'tfidf': sentiment_tfidf,
+                    'vectorizer': tfidf_vectorizer
                 }
             except ValueError as e:
                 print(f"Error processing sentiment '{sentiment}': {e}")
@@ -394,7 +451,7 @@ def compute_tf_idf_by_sentiment(df, text_column, sentiment_column):
         else:
             sentiment_groups[sentiment] = {}
     
-    # Calculate differential TF-IDF (what makes each sentiment unique)
+    # Second run: Calculate differential TF-IDF with higher contrast
     for target_sentiment, group_data in sentiment_groups.items():
         if not group_data:
             sentiment_differential_words[target_sentiment] = {}
@@ -418,20 +475,83 @@ def compute_tf_idf_by_sentiment(df, text_column, sentiment_column):
                         else:
                             other_scores.append(0)
                 
-                # Calculate distinctiveness
+                # Calculate distinctiveness with higher contrast
                 if other_scores:
                     avg_other_score = sum(other_scores) / len(other_scores)
-                    distinctiveness = float(target_score) - avg_other_score
+                    # Apply a more aggressive differential 
+                    distinctiveness = float(target_score) - (avg_other_score * 1.5)
                     
                     if distinctiveness > 0:
-                        distinctive_words[word] = distinctiveness
+                        # Check if word length is meaningful
+                        if len(word) >= 3:
+                            distinctive_words[word] = distinctiveness
         
         # Sort and keep top distinctive words
         sentiment_differential_words[target_sentiment] = dict(
-            sorted(distinctive_words.items(), key=lambda x: x[1], reverse=True)[:20]
+            sorted(distinctive_words.items(), key=lambda x: x[1], reverse=True)[:25]
         )
     
     return sentiment_differential_words
+
+# Let's define the preprocess_for_word_analysis function in global scope first,
+# so it can be used in both main() and explore_llm_data() functions.
+
+def preprocess_for_word_analysis(text):
+    """Enhanced text preprocessing for word analysis.
+    Removes stop words, short words, and common service words.
+    Focuses on meaningful content words."""
+    # Check for empty or non-string input
+    if not isinstance(text, str) or not text.strip():
+        return []
+    
+    # Convert to lowercase
+    text = text.lower()
+    
+    # Remove punctuation and special characters
+    text = re.sub(r'[^\w\s]', ' ', text)
+    
+    # Remove numbers
+    text = re.sub(r'\b\d+\b', '', text)
+    
+    # Normalize whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    # Tokenize and remove very short words
+    words = [word for word in text.split() if len(word) > 2]
+    
+    # Define more comprehensive stop words including customer service common terms
+    stop_words = set(stopwords.words('english'))
+    
+    # Common words in customer service conversations that don't convey sentiment or topic
+    customer_service_common = {
+        # Greetings and formalities
+        'would', 'could', 'should', 'please', 'thank', 'thanks', 'hello', 'hi', 'hey',
+        'okay', 'ok', 'yes', 'yep', 'yeah', 'sure', 'well', 'good', 'great', 'welcome',
+        'goodbye', 'bye', 'welcome', 'appreciate', 'assist', 'assistance', 'helping',
+        
+        # Common verbs without context
+        'got', 'get', 'getting', 'let', 'going', 'go', 'come', 'see', 'know', 'need',
+        'want', 'make', 'take', 'put', 'ask', 'tell', 'told', 'said', 'says',
+        
+        # Pronouns and determiners
+        'all', 'ive', 'im', 'thats', 'its', 'this', 'that', 'those', 'these', 'their',
+        'our', 'your', 'mine', 'yours', 'ours', 'theirs', 'him', 'her', 'them', 'they',
+        
+        # Other fillers and non-descriptive words
+        'just', 'also', 'right', 'now', 'then', 'there', 'here', 'today', 'yesterday',
+        'tomorrow', 'ago', 'sometimes', 'often', 'always', 'never', 'ever', 'actually',
+        'really', 'basically', 'simply', 'generally', 'usually'
+    }
+    
+    # Combine all stop words
+    all_stop_words = stop_words.union(customer_service_common)
+    
+    # Keep words that:
+    # 1. Are not in stop words
+    # 2. Are longer than 2 characters
+    filtered_words = [word for word in words if word not in all_stop_words]
+    
+    return filtered_words
 
 def main():
     """Main function to run the comprehensive data exploration."""
@@ -752,25 +872,32 @@ def main():
         lambda x: preprocess_text(str(x), remove_stopwords=True)
     )
     
-    # Most common words in conversations by sentiment
+    # Most common words in conversations by sentiment - improved with better filtering
     customer_words_by_sentiment = {}
     for sentiment in all_data['customer_sentiment'].unique():
-        # Get all words for this sentiment
-        sentiment_docs = all_data[all_data['customer_sentiment'] == sentiment]['preprocessed_customer_text']
-        all_words = ' '.join(sentiment_docs).split()
-        word_counts = Counter(all_words)
+        # Get all customer texts for this sentiment
+        sentiment_texts = all_data[all_data['customer_sentiment'] == sentiment]['customer_text']
         
-        # Keep only words with length > 2
-        filtered_counts = Counter({k: v for k, v in word_counts.items() if len(k) > 2})
-        
+        # Apply enhanced text preprocessing
+        all_words = []
+        for text in sentiment_texts:
+            # Use the same preprocessing as in explore_llm_data for consistency
+            words = preprocess_for_word_analysis(text)
+            all_words.extend(words)
+            
         # Get most common words
-        customer_words_by_sentiment[sentiment] = dict(filtered_counts.most_common(20))
+        word_counts = Counter(all_words)
+        customer_words_by_sentiment[sentiment] = dict(word_counts.most_common(20))
     
-    # Word frequency analysis
-    all_customer_words = ' '.join(all_data['preprocessed_customer_text']).split()
-    customer_word_counts = Counter(all_customer_words)
-    filtered_word_counts = Counter({k: v for k, v in customer_word_counts.items() if len(k) > 2})
-    top_customer_words = dict(filtered_word_counts.most_common(30))
+    # Save word frequency data in improved format
+    save_to_json(customer_words_by_sentiment, "customer_words_by_sentiment.json")
+    
+    # All customer words for overall analysis
+    all_customer_words = []
+    for text in all_data['customer_text']:
+        all_customer_words.extend(preprocess_for_word_analysis(text))
+    
+    top_customer_words = dict(Counter(all_customer_words).most_common(30))
     
     print("\nTop 20 customer words overall:")
     print(list(top_customer_words.keys())[:20])
@@ -778,9 +905,6 @@ def main():
     print("\nTop 10 customer words by sentiment:")
     for sentiment, words in customer_words_by_sentiment.items():
         print(f"{sentiment}: {list(words.keys())[:10]}")
-    
-    # Save word frequency data
-    save_to_json(customer_words_by_sentiment, "customer_words_by_sentiment.json")
     
     # Visualization: Word frequency distribution
     plt.figure(figsize=(14, 8))
@@ -859,39 +983,33 @@ def main():
     plt.tight_layout(rect=[0, 0, 1, 0.95])
     plt.savefig(f"{output_dir}/tfidf_distinctive_words.png")
     
-    # N-gram analysis
+    # Improved N-gram analysis using refined get_ngrams function
     print("\nPerforming N-gram analysis...")
     
-    # Extract bigrams and trigrams from all customer text
-    all_data['customer_bigrams'] = all_data['preprocessed_customer_text'].apply(
-        lambda x: get_ngrams(x, n=2) if isinstance(x, str) and len(x.strip()) > 0 else []
-    )
-    all_data['customer_trigrams'] = all_data['preprocessed_customer_text'].apply(
-        lambda x: get_ngrams(x, n=3) if isinstance(x, str) and len(x.strip()) > 0 else []
-    )
-    
-    # Count most common bigrams and trigrams for each sentiment
+    # Extract bigrams and trigrams from all customer text using improved method
+    # We'll collect all n-grams first for each sentiment
     bigram_by_sentiment = {}
     trigram_by_sentiment = {}
     
     for sentiment in all_data['customer_sentiment'].unique():
-        # Get all bigrams for this sentiment
-        sentiment_bigrams = [
-            bigram for sublist in 
-            all_data[all_data['customer_sentiment'] == sentiment]['customer_bigrams'] 
-            for bigram in sublist
-        ]
-        bigram_counts = Counter(sentiment_bigrams).most_common(20)
-        bigram_by_sentiment[sentiment] = dict(bigram_counts)
+        # Get all texts for this sentiment
+        sentiment_texts = all_data[all_data['customer_sentiment'] == sentiment]['customer_text']
         
-        # Get all trigrams for this sentiment
-        sentiment_trigrams = [
-            trigram for sublist in 
-            all_data[all_data['customer_sentiment'] == sentiment]['customer_trigrams'] 
-            for trigram in sublist
-        ]
-        trigram_counts = Counter(sentiment_trigrams).most_common(20)
-        trigram_by_sentiment[sentiment] = dict(trigram_counts)
+        # Extract bigrams and trigrams
+        all_bigrams = []
+        all_trigrams = []
+        
+        for text in sentiment_texts:
+            # Get cleaned text using our enhanced method
+            clean_text = ' '.join(preprocess_for_word_analysis(text))
+            
+            # Extract n-grams
+            all_bigrams.extend(get_ngrams(clean_text, n=2))
+            all_trigrams.extend(get_ngrams(clean_text, n=3))
+        
+        # Get most common n-grams
+        bigram_by_sentiment[sentiment] = dict(Counter(all_bigrams).most_common(15))
+        trigram_by_sentiment[sentiment] = dict(Counter(all_trigrams).most_common(15))
     
     print("\nTop bigrams by sentiment:")
     for sentiment, bigrams in bigram_by_sentiment.items():
@@ -903,6 +1021,10 @@ def main():
         "trigrams": {k: list(v.keys())[:10] for k, v in trigram_by_sentiment.items()}
     }
     save_to_json(ngram_results, "ngram_analysis.json")
+    
+    # Also save the newer format to n_grams_by_sentiment.json for consistency
+    with open(f"{output_dir}/n_grams_by_sentiment.json", 'w') as f:
+        json.dump(ngram_results, f, indent=4)
     
     # PART 5: Sentiment Change Analysis
     print("\nAnalyzing sentiment changes within conversations...")
@@ -1070,6 +1192,320 @@ def main():
     
     print("\nComprehensive data analysis completed successfully!")
     print(f"All outputs saved to '{output_dir}' directory")
+
+# Artık explore_llm_data() içindeki preprocess_for_word_analysis fonksiyonunu çıkaralım
+# ve yerine global tanımlı olanı kullanalım
+
+def explore_llm_data(train_df):
+    """Analyze the dataset for LLM fine-tuning and generate findings"""
+    print("\nExploring data for LLM fine-tuning...")
+    
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    import os
+    import re
+    import json
+    import numpy as np
+    from collections import Counter
+    
+    # Create folder for LLM exploration results
+    EXPLORATION_DIR = os.path.join('data/llm_ready', 'data_exploration')
+    os.makedirs(EXPLORATION_DIR, exist_ok=True)
+    
+    # Examine columns
+    print("\nDataset columns:")
+    print(train_df.columns.tolist())
+    
+    # Data types
+    print("\nData types:")
+    print(train_df.dtypes)
+    
+    # Sentiment class distribution
+    sentiment_dist = train_df['customer_sentiment'].value_counts()
+    print("\nSentiment class distribution:")
+    print(sentiment_dist)
+    
+    # Sentiment class distribution chart
+    plt.figure(figsize=(10, 6))
+    sns.countplot(x='customer_sentiment', data=train_df)
+    plt.title('Sentiment Class Distribution')
+    plt.savefig(os.path.join(EXPLORATION_DIR, 'sentiment_distribution.png'))
+    
+    # Feature engineering: Conversation features
+    train_df['conversation_length'] = train_df['conversation'].apply(len)
+    train_df['word_count'] = train_df['conversation'].apply(lambda x: len(x.split()))
+    train_df['sentence_count'] = train_df['conversation'].apply(lambda x: len(re.split(r'[.!?]+', x)))
+    train_df['customer_lines'] = train_df['conversation'].apply(lambda x: len([l for l in x.split('\n') if l.strip().startswith('Customer:')]))
+    train_df['agent_lines'] = train_df['conversation'].apply(lambda x: len([l for l in x.split('\n') if l.strip().startswith('Agent:')]))
+    train_df['avg_customer_line_length'] = train_df.apply(
+        lambda x: np.mean([len(l) for l in x['conversation'].split('\n') if l.strip().startswith('Customer:')]) 
+        if x['customer_lines'] > 0 else 0, axis=1
+    )
+    
+    # Analyze conversation features by sentiment
+    print("\nConversation features (by sentiment):")
+    conversation_stats = train_df.groupby('customer_sentiment')[
+        ['conversation_length', 'word_count', 'sentence_count', 
+         'customer_lines', 'agent_lines', 'avg_customer_line_length']
+    ].describe()
+    print(conversation_stats)
+    
+    # Conversation length vs sentiment relationship chart
+    plt.figure(figsize=(12, 6))
+    sns.boxplot(x='customer_sentiment', y='conversation_length', data=train_df)
+    plt.title('Conversation Length and Sentiment Relationship')
+    plt.savefig(os.path.join(EXPLORATION_DIR, 'conversation_length_sentiment.png'))
+    
+    # Categorical variables and sentiment relationship
+    if 'issue_area' in train_df.columns:
+        # Issue area and sentiment relationship
+        issue_sentiment = pd.crosstab(train_df['issue_area'], train_df['customer_sentiment'], normalize='index') * 100
+        
+        # Create the chart
+        plt.figure(figsize=(14, 8))
+        sns.heatmap(issue_sentiment, annot=True, cmap='YlGnBu', fmt='.1f')
+        plt.title('Issue Area and Sentiment Relationship (%)')
+        plt.savefig(os.path.join(EXPLORATION_DIR, 'issue_sentiment_relationship.png'))
+    
+    # Correlation analysis
+    numeric_cols = ['conversation_length', 'word_count', 'sentence_count', 
+                    'customer_lines', 'agent_lines', 'avg_customer_line_length']
+    corr_matrix = train_df[numeric_cols].corr()
+    
+    # Correlation matrix chart
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', fmt='.2f')
+    plt.title('Correlation Between Features')
+    plt.savefig(os.path.join(EXPLORATION_DIR, 'correlation_matrix.png'))
+    
+    # Extract customer text for better analysis
+    def extract_customer_text_llm(conversation):
+        """Extract only the customer parts from the conversation"""
+        lines = conversation.split('\n')
+        customer_lines = []
+        is_customer = False
+        
+        for line in lines:
+            line = line.strip()
+            if line.startswith('Customer:'):
+                is_customer = True
+                customer_text = line[9:].strip()
+                if customer_text:
+                    customer_lines.append(customer_text)
+            elif line.startswith('Agent:'):
+                is_customer = False
+            elif is_customer and line:
+                customer_lines.append(line)
+        
+        return ' '.join(customer_lines)
+    
+    train_df['customer_text'] = train_df['conversation'].apply(extract_customer_text_llm)
+    
+    # Most frequent meaningful words for each sentiment class
+    word_freq_by_sentiment = {}
+    for sentiment in train_df['customer_sentiment'].unique():
+        texts = train_df[train_df['customer_sentiment'] == sentiment]['customer_text']
+        all_words = []
+        for text in texts:
+            all_words.extend(preprocess_for_word_analysis(text))
+        word_freq_by_sentiment[sentiment] = Counter(all_words).most_common(30)  # Increase from 20 to 30
+    
+    # Save most frequent words
+    with open(os.path.join(EXPLORATION_DIR, 'common_words_by_sentiment.json'), 'w') as f:
+        # Convert to a more readable format
+        json_compatible = {sentiment: {word: count for word, count in freq} 
+                         for sentiment, freq in word_freq_by_sentiment.items()}
+        json.dump(json_compatible, f, indent=2)
+    
+    # Add a visualization for most distinctive words
+    plt.figure(figsize=(15, 5))
+    for i, sentiment in enumerate(word_freq_by_sentiment.keys()):
+        plt.subplot(1, len(word_freq_by_sentiment), i+1)
+        
+        words = [word for word, _ in word_freq_by_sentiment[sentiment][:15]]
+        counts = [count for _, count in word_freq_by_sentiment[sentiment][:15]]
+        
+        plt.barh(words, counts)
+        plt.title(f'Top Words: {sentiment.capitalize()}')
+        plt.xlabel('Frequency')
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(EXPLORATION_DIR, 'top_words_by_sentiment.png'))
+    
+    # Generate and save n-grams
+    bigram_by_sentiment = {}
+    trigram_by_sentiment = {}
+    
+    for sentiment in train_df['customer_sentiment'].unique():
+        sentiment_texts = train_df[train_df['customer_sentiment'] == sentiment]['customer_text']
+        
+        # Extract bigrams and trigrams
+        all_bigrams = []
+        all_trigrams = []
+        
+        for text in sentiment_texts:
+            # Extract n-grams directly from text, with improved function
+            all_bigrams.extend(get_ngrams(text, n=2))
+            all_trigrams.extend(get_ngrams(text, n=3))
+        
+        # Get most common n-grams
+        bigram_by_sentiment[sentiment] = dict(Counter(all_bigrams).most_common(20))  # Increase from 15 to 20
+        trigram_by_sentiment[sentiment] = dict(Counter(all_trigrams).most_common(20))
+    
+    # Save n-grams
+    ngram_results = {
+        "bigrams": {k: list(v.keys())[:15] for k, v in bigram_by_sentiment.items()},
+        "trigrams": {k: list(v.keys())[:15] for k, v in trigram_by_sentiment.items()}
+    }
+    
+    with open(os.path.join(EXPLORATION_DIR, 'n_grams_by_sentiment.json'), 'w') as f:
+        json.dump(ngram_results, f, indent=2)
+    
+    # Add a visualization for top n-grams
+    plt.figure(figsize=(15, 10))
+    
+    # Bigrams visualization
+    plt.subplot(2, 1, 1)
+    plt.suptitle('Top Bigrams by Sentiment', fontsize=16)
+    
+    # Create a combined plot for bigrams
+    bigram_data = []
+    sentiments = []
+    values = []
+    
+    for sentiment, bigrams in bigram_by_sentiment.items():
+        top_bigrams = list(bigrams.items())[:8]  # Top 8 for readability
+        for bigram, count in top_bigrams:
+            bigram_data.append(bigram)
+            sentiments.append(sentiment)
+            values.append(count)
+    
+    # Convert to DataFrame for easier plotting
+    bigram_df = pd.DataFrame({
+        'bigram': bigram_data,
+        'sentiment': sentiments,
+        'count': values
+    })
+    
+    # Plot bigrams
+    g = sns.barplot(x='count', y='bigram', hue='sentiment', data=bigram_df)
+    plt.xlabel('Frequency')
+    plt.ylabel('Bigram')
+    plt.legend(title='Sentiment')
+    
+    # Trigrams visualization
+    plt.subplot(2, 1, 2)
+    plt.suptitle('Top Trigrams by Sentiment', fontsize=16, y=0.98)
+    
+    # Create a combined plot for trigrams
+    trigram_data = []
+    sentiments = []
+    values = []
+    
+    for sentiment, trigrams in trigram_by_sentiment.items():
+        top_trigrams = list(trigrams.items())[:5]  # Top 5 for readability
+        for trigram, count in top_trigrams:
+            trigram_data.append(trigram)
+            sentiments.append(sentiment)
+            values.append(count)
+    
+    # Convert to DataFrame for easier plotting
+    trigram_df = pd.DataFrame({
+        'trigram': trigram_data,
+        'sentiment': sentiments,
+        'count': values
+    })
+    
+    # Plot trigrams
+    g = sns.barplot(x='count', y='trigram', hue='sentiment', data=trigram_df)
+    plt.xlabel('Frequency')
+    plt.ylabel('Trigram')
+    plt.legend(title='Sentiment')
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(EXPLORATION_DIR, 'top_ngrams_visual.png'))
+    
+    # Customer-agent dynamics analysis
+    train_df['customer_agent_ratio'] = train_df['customer_lines'] / train_df['agent_lines'].replace(0, 1)
+    
+    # Dynamics vs sentiment relationship chart
+    plt.figure(figsize=(12, 6))
+    sns.boxplot(x='customer_sentiment', y='customer_agent_ratio', data=train_df)
+    plt.title('Customer-Agent Conversation Ratio and Sentiment Relationship')
+    plt.savefig(os.path.join(EXPLORATION_DIR, 'customer_agent_ratio_sentiment.png'))
+    
+    # Summarize findings
+    findings = {
+        "sentiment_distribution": sentiment_dist.to_dict(),
+        "conversation_features": {
+            "by_sentiment": {sentiment: {
+                "avg_length": train_df[train_df['customer_sentiment']==sentiment]['conversation_length'].mean(),
+                "avg_words": train_df[train_df['customer_sentiment']==sentiment]['word_count'].mean(),
+                "avg_sentences": train_df[train_df['customer_sentiment']==sentiment]['sentence_count'].mean(),
+                "avg_customer_lines": train_df[train_df['customer_sentiment']==sentiment]['customer_lines'].mean(),
+                "avg_agent_lines": train_df[train_df['customer_sentiment']==sentiment]['agent_lines'].mean(),
+            } for sentiment in train_df['customer_sentiment'].unique()}
+        },
+        "correlations": {
+            f"{col1}_{col2}": corr_matrix.loc[col1, col2]
+            for col1 in numeric_cols for col2 in numeric_cols if col1 != col2
+        },
+        "key_findings": [
+            "There is an imbalanced distribution among sentiment classes.",
+            "Conversations with negative sentiment tend to be longer.",
+            "There is a relationship between customer speech length and sentiment.",
+            "Customer-agent interaction dynamics differ across sentiment classes."
+        ],
+        "distinctive_words": {
+            sentiment: [word for word, _ in word_freq_by_sentiment.get(sentiment, [])[:10]]
+            for sentiment in train_df['customer_sentiment'].unique()
+        },
+        "distinctive_ngrams": {
+            sentiment: {
+                "bigrams": list(bigram_by_sentiment.get(sentiment, {}).keys())[:5],
+                "trigrams": list(trigram_by_sentiment.get(sentiment, {}).keys())[:5]
+            }
+            for sentiment in train_df['customer_sentiment'].unique()
+        }
+    }
+    
+    # Save findings as JSON
+    with open(os.path.join(EXPLORATION_DIR, 'findings.json'), 'w') as f:
+        json.dump(findings, f, indent=2)
+    
+    print("\nLLM data exploration completed. Results saved.")
+    
+    return train_df, findings
+
+# Bridge function - preprocess_for_llm.py will call this function
+def get_exploration_findings(train_df):
+    """Get exploration findings for the LLM data preprocessing pipeline.
+    This function is called from preprocess_for_llm.py"""
+    
+    # First, run the full exploration (main exploration) - if not done before
+    if not os.path.exists('data_preprocessing/data_exploration'):
+        main()
+    
+    # Then specialized exploration for LLM - create output directory
+    EXPLORATION_DIR = os.path.join('data/llm_ready', 'data_exploration')
+    os.makedirs(EXPLORATION_DIR, exist_ok=True)
+    
+    train_df, findings = explore_llm_data(train_df)
+    
+    # Copy key results from main exploration folder to LLM exploration folder
+    # This way, the LLM exploration folder will have the improved n-gram and word analyses
+    try:
+        import shutil
+        for file in ['customer_words_by_sentiment.json', 'ngram_analysis.json', 'n_grams_by_sentiment.json']:
+            source = os.path.join('data_preprocessing/data_exploration', file)
+            dest = os.path.join(EXPLORATION_DIR, file)
+            if os.path.exists(source):
+                shutil.copy2(source, dest)
+                print(f"Copied {file} to LLM exploration directory")
+    except Exception as e:
+        print(f"Warning: Could not copy files: {e}")
+    
+    return train_df, findings
 
 if __name__ == "__main__":
     main() 
