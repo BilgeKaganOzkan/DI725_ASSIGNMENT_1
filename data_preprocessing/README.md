@@ -29,6 +29,104 @@ The codebase has received the following improvements:
 
 These updates ensure that the data exploration process is more modular, consistent, and produces high-quality analytical outputs for sentiment classification model development.
 
+## LLM Data Preparation
+
+The `preprocess_for_llm.py` script is designed to prepare data for Large Language Model (LLM) fine-tuning for sentiment analysis in customer service conversations. This script takes raw data and transforms it into an optimized format for LLM training.
+
+### Purpose
+
+- Structure customer service conversations in an appropriate format for LLM training
+- Integrate categorical and text features into prompt templates
+- Apply strategic sampling to address class imbalances
+- Create reliable train/validation/test splits while preventing data leakage
+
+### Key Processing Steps
+
+The `preprocess_for_llm.py` script performs the following main operations:
+
+1. **Data Loading**: 
+   - Loads raw data (`train.csv` and `test.csv`)
+   - Checks basic structural features
+
+2. **Text Preprocessing**:
+   - `preprocess_text()`: Converts all texts to a standard format:
+     - Converting to lowercase
+     - Replacing URLs and emails with special tokens ([URL], [EMAIL])
+     - Replacing numbers with [NUMBER] token
+     - Normalizing whitespace
+     - Cleaning unnecessary punctuation
+
+   - `format_conversation()`: Transforms conversations into a structured format suitable for LLM training:
+     - Marking customer lines with [CUSTOMER] token
+     - Marking agent lines with [AGENT] token
+     - Combining continuing lines for the same speaker
+
+   - `extract_customer_text()`: Extracts only customer parts from conversations
+
+3. **Feature Engineering**:
+   - Basic text features such as conversation length and word count
+   - Language features like customer question mark and exclamation mark counts
+   - Customer and agent conversation turn counts
+   - These features are used in the "feature enhanced" prompt format for LLM training
+
+4. **LLM Prompt Templates**:
+   - `create_prompt_template()`: Creates customized prompt templates for different purposes:
+     - "full": Comprehensive template covering all features
+     - "conversation_only": Simple template focusing only on the conversation
+     - "customer_only": Template focusing only on customer messages
+     - "few_shot": Template containing example scenarios for few-shot learning
+     - "feature_enhanced": Advanced template incorporating text and structural features
+
+   - `create_prompt()`: Generates a prompt for each data row according to the specified template
+
+5. **Strategic Sampling and Weighting**:
+   - `calculate_sample_weights()`: Performs strategic weighting for a more balanced and representative training set:
+     - Assigns higher weights to underrepresented classes (especially positive examples)
+     - Gives additional weight to examples far from the mean (z-score > 1.5)
+     - Assigns higher weights to longer customer messages (which may contain more sentiment signals)
+     - Applies an additional 50% weight increase specifically for the positive class
+
+6. **Dataset Creation and Splitting**:
+   - `prepare_data_for_llm()`: Transforms raw data into processed, balanced, and split datasets:
+     - Creates stratified train/validation splits using StratifiedKFold
+     - Checks and prevents data leakage to maintain test data integrity
+     - Balances class distribution by equalizing the maximum number of examples per class
+     - Selects high-weighted examples for a more balanced training set
+
+### Output Files
+
+When `preprocess_for_llm.py` is executed, it creates the following files in the `data/subdata` directory:
+
+- `train.csv`: Balanced and strategically sampled training set with class imbalance addressed
+- `validation.csv`: Validation set reserved for model evaluation
+- `test.csv`: Test set (preserved original test data, enriched with additional features)
+
+Each dataset contains the following features:
+- Original columns: issue_area, product_category, conversation, customer_sentiment, etc.
+- Added features:
+  - `formatted_conversation`: Conversation transformed into a special format for LLM
+  - `customer_text`: Text containing only customer conversations
+  - `prompt`: Complete prompt for LLM training, containing the task and features
+
+### Data Integrity and Protection Measures
+
+The `preprocess_for_llm.py` script includes the following protection measures during data preparation:
+
+1. **Test Dataset Protection**: 
+   - Test data never leaks into training or validation data
+   - Basic information in the test dataset is preserved unchanged
+   - Added columns contain only features necessary for analysis and LLM training
+
+2. **Stratified Splitting**:
+   - Ensures sentiment classes are proportionally represented in each dataset
+   - Creates reliable and reproducible splits using StratifiedKFold
+
+3. **Balanced Class Distribution**:
+   - Provides equal number of examples for each sentiment class (positive, negative, neutral) in the training set
+   - Applies weighted random sampling for underrepresented classes
+
+These processing steps ensure that raw data from customer service conversations is transformed into optimized, balanced, and structured datasets for LLM training.
+
 ### Methodology
 
 The script performs a multi-layered analysis:
