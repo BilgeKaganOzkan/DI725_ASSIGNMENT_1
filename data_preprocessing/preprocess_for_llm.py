@@ -9,10 +9,9 @@ This script prepares data for LLM fine-tuning for sentiment analysis in customer
 The following steps are performed:
 1. Data Loading
 2. Text Preprocessing
-3. Inclusion of Categorical Features
-4. Prompt Creation for LLM
-5. Dataset Balancing and Strategic Sampling
-6. Creation of Train/Validation/Test Datasets
+3. Prompt Creation for LLM
+4. Dataset Balancing and Strategic Sampling
+5. Creation of Train/Validation/Test Datasets (with prompt and all features used to create it)
 """
 
 import pandas as pd
@@ -55,8 +54,18 @@ def preprocess_text(text):
     # Replace emails with [EMAIL] token
     text = re.sub(r'\S+@\S+', '[EMAIL]', text)
     
-    # Replace numbers with [NUMBER] token
+    # Replace pure numeric tokens with [NUMBER] token (e.g., "123")
     text = re.sub(r'\b\d+\b', '[NUMBER]', text)
+    
+    # Replace order numbers (alphanumeric patterns) with [NUMBER] token
+    # Examples: "bb123456", "order#12345", "order-123", etc.
+    text = re.sub(r'\b[a-z]*\d+[a-z0-9]*\b', '[NUMBER]', text)
+    
+    # Replace specific patterns like "order number" followed by alphanumeric
+    text = re.sub(r'order number is [a-z0-9#-]+', 'order number is [NUMBER]', text)
+    text = re.sub(r'order number [a-z0-9#-]+', 'order number [NUMBER]', text)
+    text = re.sub(r'order #[a-z0-9-]+', 'order #[NUMBER]', text)
+    text = re.sub(r'order[- ]?id [a-z0-9#-]+', 'order-id [NUMBER]', text)
     
     # Normalize whitespace
     text = re.sub(r'\s+', ' ', text).strip()
@@ -82,11 +91,32 @@ def format_conversation(conversation):
             elif line.startswith('Agent:'):
                 formatted_lines.append('[AGENT] ' + line[6:].strip())
             else:
-                # Add continuing lines to the previous speaker
+                # Add continuing lines to the previous speaker or handle unmarked lines
                 if formatted_lines and '[CUSTOMER]' in formatted_lines[-1]:
                     formatted_lines[-1] += ' ' + line
                 elif formatted_lines and '[AGENT]' in formatted_lines[-1]:
                     formatted_lines[-1] += ' ' + line
+                # If no previous speaker exists, assume it's an agent line
+                elif not formatted_lines:
+                    formatted_lines.append('[AGENT] ' + line)
+                else:
+                    # If line doesn't have a speaker prefix but appears after other lines
+                    # Try to determine if it's agent or customer based on pattern
+                    if "thank you for calling" in line.lower() or "my name is" in line.lower():
+                        formatted_lines.append('[AGENT] ' + line)
+                    else:
+                        # Default to customer if unclear
+                        formatted_lines.append('[CUSTOMER] ' + line)
+    
+    # Ensure at least one agent and customer line exists
+    has_customer = any('[CUSTOMER]' in line for line in formatted_lines)
+    has_agent = any('[AGENT]' in line for line in formatted_lines)
+    
+    if not has_customer:
+        formatted_lines.append('[CUSTOMER] Thank you for your assistance')
+    
+    if not has_agent:
+        formatted_lines.insert(0, '[AGENT] How may I help you today?')
     
     return ' '.join(formatted_lines)
 
@@ -122,11 +152,6 @@ def create_prompt_template(format_type="full"):
         prompt_template = """Analyze the following customer service conversation and determine the customer's sentiment.
 
 Conversation: {conversation}
-
-Issue Area: {issue_area}
-Product Category: {product_category}
-Issue Complexity: {issue_complexity}
-Agent Experience Level: {agent_experience}
 
 The customer's sentiment is: {sentiment}
 
@@ -180,9 +205,6 @@ Conversation Length: {conv_length} characters
 Customer Question Marks: {question_marks}
 Customer Turns: {customer_turns}
 
-Issue Area: {issue_area}
-Product Category: {product_category}
-
 The customer's sentiment is: {sentiment}
 
 This is a training example for sentiment analysis in customer service conversations.
@@ -196,12 +218,6 @@ def create_prompt(row, prompt_template):
     conversation = row['formatted_conversation'] if 'formatted_conversation' in row else row['conversation']
     customer_text = row['customer_text'] if 'customer_text' in row else ""
     sentiment = row['customer_sentiment']
-    
-    # Categorical features (if available)
-    issue_area = row['issue_area'] if 'issue_area' in row else "Unknown"
-    product_category = row['product_category'] if 'product_category' in row else "Unknown"
-    issue_complexity = row['issue_complexity'] if 'issue_complexity' in row else "Unknown"
-    agent_experience = row['agent_experience_level'] if 'agent_experience_level' in row else "Unknown"
     
     # Advanced features for enhanced prompts
     conv_length = len(conversation) if 'formatted_conversation' in row else len(row['conversation'])
@@ -218,16 +234,37 @@ def create_prompt(row, prompt_template):
         conversation=conversation,
         customer_text=customer_text,
         sentiment=sentiment,
-        issue_area=issue_area,
-        product_category=product_category,
-        issue_complexity=issue_complexity,
-        agent_experience=agent_experience,
         conv_length=conv_length,
         question_marks=question_marks,
         customer_turns=customer_turns
     )
     
     return prompt
+
+def validate_prompt(prompt, sentiment):
+    """Validate that the prompt is correctly formatted for LLM training"""
+    # Check if prompt contains the conversation
+    if "Conversation:" not in prompt:
+        return False, "Missing 'Conversation:' section"
+    
+    # Check if the prompt contains the expected sentiment
+    expected_text = f"The customer's sentiment is: {sentiment}"
+    if expected_text not in prompt:
+        return False, f"Missing '{expected_text}' in prompt"
+    
+    # Check for any unprocessed order numbers
+    order_number_patterns = [
+        r"order number is \w+\d+\w*",
+        r"order number \w+\d+\w*",
+        r"order #\w+\d+\w*"
+    ]
+    
+    for pattern in order_number_patterns:
+        matches = re.findall(pattern, prompt.lower())
+        if matches:
+            return False, f"Unprocessed order number found: {matches[0]}"
+    
+    return True, "Prompt is valid for LLM training"
 
 def calculate_sample_weights(train_df):
     """Calculate weights for strategic sampling based on class imbalance and key features"""
@@ -287,19 +324,32 @@ def prepare_data_for_llm(train_df, test_df, prompt_format="few_shot"):
     train_df['customer_text'] = train_df['customer_text'].apply(preprocess_text)
     test_df['customer_text'] = test_df['customer_text'].apply(preprocess_text)
     
-    # Basic feature engineering
+    # Basic feature engineering - these are needed for sample weights and prompt creation
     train_df['conversation_length'] = train_df['formatted_conversation'].apply(len)
+    test_df['conversation_length'] = test_df['formatted_conversation'].apply(len)
+    
     train_df['customer_text_length'] = train_df['customer_text'].apply(len)
+    test_df['customer_text_length'] = test_df['customer_text'].apply(len)
     
-    # Extract distinctive features
+    # Extract distinctive features - needed for prompt creation in feature_enhanced mode
     train_df['customer_question_marks'] = train_df['customer_text'].apply(lambda x: x.count('?'))
-    train_df['customer_exclamation_marks'] = train_df['customer_text'].apply(lambda x: x.count('!'))
+    test_df['customer_question_marks'] = test_df['customer_text'].apply(lambda x: x.count('?'))
     
-    # Calculate customer and agent turns
+    train_df['customer_exclamation_marks'] = train_df['customer_text'].apply(lambda x: x.count('!'))
+    test_df['customer_exclamation_marks'] = test_df['customer_text'].apply(lambda x: x.count('!'))
+    
+    # Calculate customer and agent turns - needed for prompt creation in feature_enhanced mode
     train_df['customer_turns'] = train_df['conversation'].apply(
         lambda x: len([l for l in (x.split('\n') if isinstance(x, str) else []) if l.strip().startswith('Customer:')])
     )
+    test_df['customer_turns'] = test_df['conversation'].apply(
+        lambda x: len([l for l in (x.split('\n') if isinstance(x, str) else []) if l.strip().startswith('Customer:')])
+    )
+    
     train_df['agent_turns'] = train_df['conversation'].apply(
+        lambda x: len([l for l in (x.split('\n') if isinstance(x, str) else []) if l.strip().startswith('Agent:')])
+    )
+    test_df['agent_turns'] = test_df['conversation'].apply(
         lambda x: len([l for l in (x.split('\n') if isinstance(x, str) else []) if l.strip().startswith('Agent:')])
     )
     
@@ -313,6 +363,24 @@ def prepare_data_for_llm(train_df, test_df, prompt_format="few_shot"):
     # Create prompts
     train_df['prompt'] = train_df.apply(lambda row: create_prompt(row, prompt_template), axis=1)
     test_df['prompt'] = test_df.apply(lambda row: create_prompt(row, prompt_template), axis=1)
+    
+    # Validate prompts for LLM training
+    print("Validating prompts for LLM training...")
+    invalid_prompts = 0
+    for idx, row in train_df.sample(min(10, len(train_df))).iterrows():
+        is_valid, message = validate_prompt(row['prompt'], row['customer_sentiment'])
+        if not is_valid:
+            print(f"Invalid prompt at index {idx}: {message}")
+            print("First 200 chars:", row['prompt'][:200], "...")
+            invalid_prompts += 1
+    
+    validation_message = f"Prompt validation complete. Found {invalid_prompts} invalid prompts in sample."
+    print(validation_message)
+    
+    if invalid_prompts > 0:
+        print("WARNING: Some prompts may not be properly formatted for LLM training.")
+    else:
+        print("All sampled prompts are valid for LLM training.")
     
     # Calculate weights for strategic sampling
     train_df = calculate_sample_weights(train_df)
@@ -372,10 +440,49 @@ def prepare_data_for_llm(train_df, test_df, prompt_format="few_shot"):
     balanced_train_set = pd.concat(balanced_train_sets)
     balanced_train_set = balanced_train_set.sample(frac=1, random_state=42).reset_index(drop=True)
     
+    # Keep all columns that are used to create the prompt plus the prompt itself
+    columns_to_keep = [
+        'customer_sentiment',          # The sentiment label (target)
+        'prompt',                      # The LLM-ready formatted prompt (input)
+        'conversation',                # Original conversation
+        'formatted_conversation',      # Formatted conversation with speaker tokens
+        'customer_text',               # Extracted customer text
+        'conversation_length',         # Conversation length feature
+        'customer_text_length',        # Customer text length feature
+        'customer_question_marks',     # Question marks count feature
+        'customer_exclamation_marks',  # Exclamation marks count feature
+        'customer_turns',              # Number of customer turns feature
+        'agent_turns',                 # Number of agent turns feature
+        'sample_weight'                # Sample weight for potential resampling
+    ]
+    
+    # Filter to keep all columns that exist
+    balanced_train_set = balanced_train_set[
+        [col for col in columns_to_keep if col in balanced_train_set.columns]
+    ]
+    val_set = val_set[
+        [col for col in columns_to_keep if col in val_set.columns]
+    ]
+    test_df = test_df[
+        [col for col in columns_to_keep if col in test_df.columns]
+    ]
+    
     # Save datasets
     balanced_train_set.to_csv(os.path.join(OUTPUT_DIR, 'train.csv'), index=False)
     val_set.to_csv(os.path.join(OUTPUT_DIR, 'validation.csv'), index=False)
     test_df.to_csv(os.path.join(OUTPUT_DIR, 'test.csv'), index=False)
+    
+    # Final validation - create an example file with samples of prompts
+    with open(os.path.join(OUTPUT_DIR, 'prompt_examples.txt'), 'w', encoding='utf-8') as f:
+        f.write("# Example Prompts for LLM Training\n\n")
+        for sentiment in ['positive', 'negative', 'neutral']:
+            examples = balanced_train_set[balanced_train_set['customer_sentiment'] == sentiment].sample(min(3, len(balanced_train_set[balanced_train_set['customer_sentiment'] == sentiment])))
+            for _, row in examples.iterrows():
+                f.write(f"## {sentiment.upper()} Example\n\n")
+                f.write(f"```\n{row['prompt']}\n```\n\n")
+    
+    print(f"Saved {len(balanced_train_set)} training examples, {len(val_set)} validation examples, and {len(test_df)} test examples.")
+    print(f"Example prompts saved to {os.path.join(OUTPUT_DIR, 'prompt_examples.txt')}")
     
     return balanced_train_set, val_set, test_df
 

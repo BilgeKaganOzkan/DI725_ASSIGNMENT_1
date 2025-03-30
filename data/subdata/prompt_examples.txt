@@ -1,0 +1,155 @@
+# Example Prompts for LLM Training
+
+## POSITIVE Example
+
+```
+Analyze the following customer service conversation and determine the customer's sentiment.
+
+Conversation:  agent  thank you for calling brownbox customer support. my name is john. how may i assist you today?  customer  hi john, my name is emily. i am looking to buy a toy for my nephew's birthday. can you help me with that?  agent  of course, emily. i will be happy to assist you. may i know what kind of toy you are looking for?  customer  well, he is a big fan of superhero toys. do you have any superhero toys in stock?  agent  yes, we do have a wide range of superhero toys available on our website. may i know which superhero your nephew likes the most?  customer  he loves spiderman. do you have any spiderman toys available?  agent  yes, we have a variety of spiderman toys available on our website. let me check our inventory for you. please hold on for a moment while i look that up.  agent puts the customer on hold and checks the inventory   agent  thank you for your patience, emily. we have a spiderman action figure available in our inventory. it is a  NUMBER -inch action figure with multiple points of articulation. would you like me to add it to your order?  customer  yes, that sounds perfect. can you help me with the order process?  agent  absolutely, emily. to process your order, i'll need some additional details. could you please provide me with your shipping address?  customer  sure, my shipping address is  NUMBER  green street, townsville, stateland,  NUMBER .  agent  thank you for providing that information. i will now generate your order and provide you with the final price. one moment, please.  agent generates the order, calculates the price, and confirms it with the customer.   agent  your order for the spiderman action figure has been successfully placed. the total amount is   NUMBER . NUMBER . i will send you an email with the order details and the estimated delivery date. is there anything else i can assist you with?  customer  no, that's all for now. thank you for your help, john.  agent  you're welcome, emily. it was my pleasure assisting you today. if you have any further questions or need assistance in the future, feel free to reach out to us. have a great day!  customer  thank you. you too, john. goodbye!  agent  goodbye, emily! take care!
+
+Conversation Length: 2190 characters
+Customer Question Marks: 4
+Customer Turns: 7
+
+The customer's sentiment is: positive
+
+This is a training example for sentiment analysis in customer service conversations.
+
+```
+
+## POSITIVE Example
+
+```
+Analyze the following customer service conversation and determine the customer's sentiment.
+
+Conversation:  agent  hello, thank you for contacting brownbox customer support. my name is sarah. how may i assist you today?  customer  hi sarah, i'm interested in purchasing a t-shirt from your website, but i'm not sure how to go about it.  agent  sure, i'll be happy to help. can you please tell me which t-shirt you're interested in?  customer  yes, i'm looking for a black t-shirt with a graphic design on it.  agent  great, we have a variety of black t-shirts with graphic designs on our website. can you tell me the size you're looking for?  customer  yes, i need a medium size.  agent  okay, let me check our inventory. yes, we have the t-shirt you're looking for in medium size. do you want me to guide you through the order placement process?  customer  yes, please.  agent  firstly, you need to add the t-shirt to your cart by clicking on the "add to cart" button. once you've added it to your cart, click on the "cart" icon on the top right corner of the page.  customer  okay, i've added it to my cart. now what?  agent  now, you'll be redirected to the cart page, where you can view your order summary. if you're satisfied with your order, click on the "checkout" button.  customer  okay, i see my order summary. what do i do now?  agent  on the checkout page, you'll be prompted to enter your shipping and billing details. please ensure that you provide accurate information. once you've entered your details, click on the "continue to payment" button.  customer  alright, i've entered my details. what's next?  agent  on the payment page, you can select your preferred payment method. we accept credit debit cards, net banking, and upi. once you've selected your payment method, click on the "place order" button.  customer  okay, i've selected my payment method and placed the order. what happens next?  agent  once you've placed the order, you'll receive an order confirmation email with your order details and estimated delivery date. you can track your order status on our website. is there anything else i can help you with?  customer  no, that's all. thank you for your help.  agent  you're welcome. if you have any further queries, please feel free to contact us. have a great day!
+
+Conversation Length: 2191 characters
+Customer Question Marks: 4
+Customer Turns: 9
+
+The customer's sentiment is: positive
+
+This is a training example for sentiment analysis in customer service conversations.
+
+```
+
+## POSITIVE Example
+
+```
+Analyze the following customer service conversation and determine the customer's sentiment.
+
+Conversation:  agent  hello, thank you for contacting brownbox customer support. my name is lily. how may i assist you today?  customer  hi, i recently purchased an electric kettle from your website, and i need to know the seller's return policy for it.  agent  i'm glad to assist you with that. may i have your order number, please?  customer  sure, it's   NUMBER .  agent  thank you for providing your order number. let me check the details for you. please hold for a moment.  agent puts the customer on hold for a few minutes   agent  thank you for waiting, i have checked your order details, and i can see that the seller for this product is brownbox itself. we offer a  NUMBER -day return policy for most of our products, including electric kettles. however, some products may have different return policies. would you like me to check the exact return policy for this specific product?  customer  yes, please.  agent  alright. please hold for a moment while i check the return policy for this product.  agent puts the customer on hold for a few minutes   agent  thank you for waiting. i have checked with the seller, and i can confirm that the return policy for this electric kettle is  NUMBER  days from the date of delivery. the product should be in new and unused condition, and the original packaging should be intact. you can initiate the return process from your brownbox account or by contacting our customer support team. is there anything else i can assist you with?  customer  no, that's all. thank you for your help.  agent  you're welcome. please feel free to contact us if you have any further queries or issues. have a great day!  customer  you too. goodbye.  agent  goodbye!
+
+Conversation Length: 1681 characters
+Customer Question Marks: 0
+Customer Turns: 5
+
+The customer's sentiment is: positive
+
+This is a training example for sentiment analysis in customer service conversations.
+
+```
+
+## NEGATIVE Example
+
+```
+Analyze the following customer service conversation and determine the customer's sentiment.
+
+Conversation:  agent  thank you for calling brownbox customer support. my name is sarah. how can i assist you today?  customer  hi sarah, my name is jane. i placed an order for baby food on brownbox two weeks ago, and it hasn't been delivered yet. i'm getting really frustrated.  agent  i'm sorry to hear that, jane. let me check the details for you. could you please provide me with your order number?  customer  sure, the order number  NUMBER   NUMBER .  agent  thank you, jane. i'm sorry to inform you that your order has been delayed due to unforeseen circumstances. we are doing everything we can to get it to you as soon as possible.  customer  what kind of unforeseen circumstances?  agent  i'm not sure, jane. it could be due to a shortage of the product or a delay in the delivery process. however, i assure you that we are working on it and will keep you updated on the status of your order.  customer  this is unacceptable. i need the baby food for my child, and i can't wait any longer.  agent  i understand your frustration, jane. is there anything else i can do to help you in the meantime?  customer  can you cancel the order and refund me the money?  agent  i can certainly assist you with that, jane. however, i suggest waiting a little longer to see if the order will be delivered soon. if you still wish to cancel the order, i'll require some information from you.  customer  okay, i'll wait a little longer. can you at least give me an estimated time of delivery?  agent  i'm sorry, jane, but i don't have that information at the moment. however, i'll make sure to follow up with you as soon as i have an update. in the meantime, is there anything else i can help you with?  customer  no, that's all for now. i hope you can resolve this issue quickly.  agent  i completely understand, jane. thank you for your patience and understanding. if you have any further questions or concerns, please don't hesitate to reach out. have a great day!  customer  thank you, sarah. goodbye.  agent  goodbye, jane. take care!
+
+Conversation Length: 2016 characters
+Customer Question Marks: 3
+Customer Turns: 8
+
+The customer's sentiment is: negative
+
+This is a training example for sentiment analysis in customer service conversations.
+
+```
+
+## NEGATIVE Example
+
+```
+Analyze the following customer service conversation and determine the customer's sentiment.
+
+Conversation:  agent  hello, thank you for calling brownbox customer support. this is jane. how may i assist you today?  customer  hi jane, my name is sarah, and i have an issue with the sandwich maker i received from your company.  agent  i'm sorry to hear that, sarah. can you please provide me with your order number  NUMBER  email address associated with the purchase?  customer  sure, my order number  NUMBER   NUMBER .  agent  thank you, sarah. can you please tell me what the issue is?  customer  yes, i received the sandwich maker a week ago, but it's not working correctly. i want to return it and get a refund.  agent  i understand your frustration, sarah. may i know what exactly is wrong with the sandwich maker?  customer  it's not heating up correctly, and the bread is not getting toasted. i tried to fix it by following the instructions, but it's still not working.  agent  i'm sorry to hear that, sarah. we apologize for the inconvenience caused. we can initiate a return and refund process for you. however, we need to arrange for a pickup or return shipping label. which option would you prefer?  customer  i want to return it via pickup.  agent  sure, sarah. i can arrange for a pickup of the sandwich maker. may i know when would be a convenient time for the pickup?  customer  i work from home, so any time between  NUMBER  am to  NUMBER  pm would be fine.  agent  great, sarah. i have scheduled a pickup for you between  NUMBER  am to  NUMBER  pm tomorrow. you will receive an email confirmation shortly with the details.  customer  thank you, jane. i appreciate your assistance.  agent  you're welcome, sarah. is there anything else i can assist you with?  customer  no, that's all. thank you for your help.  agent  it was my pleasure, sarah. if you have any other questions or concerns in the future, feel free to reach out to us. we value your business and strive to provide the best customer experience.  customer  i appreciate your help, jane. have a good day!  agent  thank you, sarah. you too!
+
+Conversation Length: 2009 characters
+Customer Question Marks: 0
+Customer Turns: 9
+
+The customer's sentiment is: negative
+
+This is a training example for sentiment analysis in customer service conversations.
+
+```
+
+## NEGATIVE Example
+
+```
+Analyze the following customer service conversation and determine the customer's sentiment.
+
+Conversation:  customer  hi, i need help with my recent order. i received an inverter, but the package was already open and tampered with upon delivery. i want to return or exchange it.  agent  i am sorry to hear that, and i understand your frustration, ma'am. may i have your name and order number, please?  customer  my name is rachel, and my order number  NUMBER   NUMBER .  agent  thank you, rachel. let me check the details of your order. please hold for a moment.  customer is put on hold for a minute.   agent  thank you for waiting, rachel. i apologize for the inconvenience caused. i can see that the package was tampered with during transit. we will take full responsibility for this, and i will assist you in the return or exchange process.  customer  okay, what are my options?  agent  you can either choose to return the inverter for a full refund or exchange it for a new one. which one would you prefer?  customer  i want to exchange it for a new one.  agent  sure, rachel. we will arrange for a pickup of the defective inverter and deliver a new one to you. may i know if you have the original packaging?  customer  no, i don't have the original packaging.  agent  that's okay, rachel. we will arrange for the packaging as well. please allow me a moment to initiate the process.  customer is put on hold for a minute.   agent  thank you for waiting, rachel. i have initiated the return and exchange process. our team will contact you within  NUMBER  hours to schedule the pickup and delivery. you will receive an email with the details shortly.  customer  okay, but i need the inverter urgently. can you expedite the process?  agent  i understand your urgency, rachel, and i apologize for the inconvenience caused. let me check if there are any options available for expedited shipping. please hold for a moment.  customer is put on hold for a minute.   agent  thank you for waiting, rachel. i have checked with our shipping department, and we can expedite the shipping for the new inverter. you will receive it within the next two business days.  customer  that's great. thank you.  agent  you're welcome, rachel. is there anything else i can assist you with today?  customer  no, that's all for now.  agent  thank you for contacting brownbox customer support, rachel. we apologize for the inconvenience caused and appreciate your patience. have a good day.  customer  goodbye.  agent  goodbye, rachel.
+
+Conversation Length: 2405 characters
+Customer Question Marks: 2
+Customer Turns: 9
+
+The customer's sentiment is: negative
+
+This is a training example for sentiment analysis in customer service conversations.
+
+```
+
+## NEUTRAL Example
+
+```
+Analyze the following customer service conversation and determine the customer's sentiment.
+
+Conversation:  customer  hello, i am trying to log in to my account, but it's asking me to verify my mobile number or email address. why is that?  agent  hello! thank you for contacting brownbox customer support. my name is sarah, and i'll be happy to assist you. the verification requirement is a security measure to ensure that only authorized users can access your account. it's a one-time process, and it helps us protect your personal information.  customer  okay, i understand. but i am not receiving the verification code on my phone or email.  agent  i'm sorry to hear that. let me check that for you. could you please provide me with your registered mobile number or email address?  customer  my registered mobile number is  NUMBER , and my email address is  EMAIL   agent  thank you for providing that information. i can see that the mobile number and email address on your account are correct. sometimes, the verification code may get delayed due to network issues or other factors. could you please try again after a few minutes and let me know if you still face the same issue?  customer  okay, i'll try again and let you know.  after a few minutes   customer  i still haven't received the verification code.  agent  i'm sorry to hear that. in that case, i can help you verify your account manually. could you please provide me with your full name and billing address?  customer  my name is john doe, and my billing address is  NUMBER  main street, anytown, usa.  agent  thank you for providing that information. i have verified your account manually, and you should be able to log in now. please let me know if you face any further issues.  customer  thank you, i am able to log in now.  agent  you're welcome! is there anything else i can assist you with?  customer  no, that's all. thank you for your help.  agent  it was my pleasure assisting you. if you have any further questions or concerns, please don't hesitate to contact us. have a great day!  customer  thank you, you too. goodbye!  agent  goodbye!
+
+Conversation Length: 2009 characters
+Customer Question Marks: 1
+Customer Turns: 9
+
+The customer's sentiment is: neutral
+
+This is a training example for sentiment analysis in customer service conversations.
+
+```
+
+## NEUTRAL Example
+
+```
+Analyze the following customer service conversation and determine the customer's sentiment.
+
+Conversation:  customer  hi, i recently purchased a dslr camera from brownbox, and i'm not sure who is responsible for the installation. is it the brand or brownbox?  agent  hello! my name is sarah, and i'm sorry to hear you're having trouble with your camera installation. i can assist you with that. can you please tell me which brand of dslr camera you purchased?  customer  hi, sarah. i purchased a canon eos rebel  NUMBER  dslr camera.  agent  great! typically, it's the customer's responsibility to install the camera, but i can provide you with some assistance. have you tried installing the camera yourself?  customer  yes, i tried to install it myself, but i'm having some difficulty. i'm not sure if i'm doing it correctly.  agent  i understand. can you please tell me where you're having difficulties?  customer  sure. i'm having trouble setting up the lenses and the camera body. i'm not sure if i'm doing it correctly.  agent  i see. installing the lenses and camera body can be tricky, but i can guide you through it. can you please tell me if you have the instruction manual with you?  customer  yes, i have the manual with me.  agent  perfect! i recommend following the instructions in the manual step by step. it should guide you through the installation process. if you encounter any difficulties, please let me know, and i'll be happy to assist you.  customer  okay, i'll try that. but, if i still have trouble, who should i contact for further assistance?  agent  if you're still having trouble after following the instructions in the manual, please contact us at brownbox. we can assist you further or connect you with the manufacturer's support team if necessary.  customer  okay, thank you so much for your help, sarah. i appreciate it.  agent  you're welcome! don't hesitate to reach out to us if you have any further questions or concerns. have a great day!  customer  you too, goodbye!  agent  goodbye!
+
+Conversation Length: 1914 characters
+Customer Question Marks: 2
+Customer Turns: 8
+
+The customer's sentiment is: neutral
+
+This is a training example for sentiment analysis in customer service conversations.
+
+```
+
+## NEUTRAL Example
+
+```
+Analyze the following customer service conversation and determine the customer's sentiment.
+
+Conversation:  agent  hello, thank you for calling brownbox customer support. my name is tom, how may i assist you today?  customer  hi, i'm having trouble logging into my account. it says i've exceeded the attempts to enter the correct verification code for my headphone.  agent  i'm sorry to hear that you're having trouble logging into your account. can you please provide me with your email address or phone number associated with the account?  customer  my email address is  EMAIL   agent  thank you, john. let me check your account. can you please confirm your full name and phone number associated with the account?  customer  my name is john doe, and my phone number is  NUMBER - NUMBER - NUMBER .  agent  thank you, john. i see that you're having trouble logging into your account due to exceeded attempts to enter the correct verification code for your headphone. can you please confirm the mobile number associated with the account?  customer  my mobile number is  NUMBER - NUMBER - NUMBER .  agent  alright, let me guide you through the process. first, we need to reset your password. can you please click on the 'forgot password' link on the login page and follow the instructions?  customer  i tried that already, but it's not working.  agent  i understand, john. let me check with our technical team to see if there is any issue with our system. can you please hold for a moment?  customer on hold for  NUMBER - NUMBER  minutes   agent  thank you for holding, john. our technical team has informed me that there was a temporary issue with our system, which has now been resolved. can you please try resetting your password again?  customer  okay, i've reset my password. what do i do now?  agent  great. now, please try logging into your account with the new password. if you still face any issues, please let me know.  customer  okay, let me try.  pause  it's working now. thank you so much for your help.  agent  you're welcome, john. is there anything else i can assist you with?  customer  no, that's all. thank you for your assistance.  agent  you're welcome, john. if you have any further questions or concerns, please don't hesitate to contact us. have a great day!  customer  you too. goodbye.  agent  goodbye.
+
+Conversation Length: 2219 characters
+Customer Question Marks: 1
+Customer Turns: 9
+
+The customer's sentiment is: neutral
+
+This is a training example for sentiment analysis in customer service conversations.
+
+```
+
