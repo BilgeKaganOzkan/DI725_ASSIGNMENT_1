@@ -45,8 +45,16 @@ def preprocess_text(text):
     if not isinstance(text, str):
         return ""
     
+    # Etiketleri geçici olarak korumak için yer tutucular kullan
+    text = text.replace('[AGENT]', '{{AGENT_TAG}}')
+    text = text.replace('[CUSTOMER]', '{{CUSTOMER_TAG}}')
+    
     # Convert to lowercase
     text = text.lower()
+    
+    # Yer tutucuları orijinal formlarına geri çevir
+    text = text.replace('{{agent_tag}}', '[AGENT]')
+    text = text.replace('{{customer_tag}}', '[CUSTOMER]')
     
     # Replace URLs with [URL] token
     text = re.sub(r'http\S+|www\S+|https\S+', '[URL]', text, flags=re.MULTILINE)
@@ -70,8 +78,8 @@ def preprocess_text(text):
     # Normalize whitespace
     text = re.sub(r'\s+', ' ', text).strip()
     
-    # Remove extra punctuation (but keep basic marks)
-    text = re.sub(r'[^\w\s.,!?\'"-]', ' ', text)
+    # Remove extra punctuation (but keep basic marks and speaker tokens)
+    text = re.sub(r'[^\w\s.,!?\'"\[\]AGENTCUSTOMER-]', ' ', text)
     
     return text
 
@@ -79,72 +87,193 @@ def format_conversation(conversation):
     """Format conversation with special tokens to help the model distinguish speakers"""
     if not isinstance(conversation, str):
         return ""
+    
+    # Metinden fazla "agent" ve "customer" kelimelerini temizle
+    def clean_text(text):
+        # "agent" kelimesini temizle
+        text = re.sub(r'\bagent\b', '', text, flags=re.IGNORECASE).strip()
+        # "customer" kelimesini temizle
+        text = re.sub(r'\bcustomer\b', '', text, flags=re.IGNORECASE).strip()
+        # Çoklu boşlukları temizle
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text
+    
+    # Eğer conversation zaten formatlanmış ise (köşeli parantezler içeriyorsa), temizleyip döndür
+    if "[AGENT]" in conversation and "[CUSTOMER]" in conversation:
+        # Zaten etiketler var, gereksiz kelimeleri temizleyelim
+        formatted_parts = []
+        parts = re.split(r'(\[AGENT\]|\[CUSTOMER\])', conversation)
+        current_speaker = None
         
-    lines = conversation.split('\n')
-    formatted_lines = []
+        for part in parts:
+            if part == "[AGENT]":
+                current_speaker = "AGENT"
+                formatted_parts.append(part)
+            elif part == "[CUSTOMER]":
+                current_speaker = "CUSTOMER"
+                formatted_parts.append(part)
+            elif part.strip():  # Eğer boş değilse
+                if current_speaker:
+                    cleaned_part = clean_text(part)
+                    if cleaned_part:
+                        formatted_parts.append(cleaned_part)
+        
+        if formatted_parts:
+            return " ".join(formatted_parts)
+        return conversation
+    
+    # Normal konuşma akışında, konuşmacı değişimlerini algıla ve etiketle
+    lines = [line.strip() for line in conversation.split('\n') if line.strip()]
+    
+    # Konuşma metni parçalarını depolamak için
+    conversation_parts = []
+    current_speaker = None
+    current_text = ""
+    
+    # Belirgin konuşmacı belirteçleri
+    agent_indicators = ["agent:", "thank you for calling", "how may i assist you", 
+                        "how can i help you", "my name is", "service team:",
+                        "reactivation team:", "carrier service team:"]
+    customer_indicators = ["customer:", "hi ", "hello ", "i am calling", "i ordered", 
+                           "i have a problem", "i need help", "i want to"]
     
     for line in lines:
-        line = line.strip()
-        if line:
-            if line.startswith('Customer:'):
-                formatted_lines.append('[CUSTOMER] ' + line[9:].strip())
-            elif line.startswith('Agent:'):
-                formatted_lines.append('[AGENT] ' + line[6:].strip())
-            else:
-                # Add continuing lines to the previous speaker or handle unmarked lines
-                if formatted_lines and '[CUSTOMER]' in formatted_lines[-1]:
-                    formatted_lines[-1] += ' ' + line
-                elif formatted_lines and '[AGENT]' in formatted_lines[-1]:
-                    formatted_lines[-1] += ' ' + line
-                # If no previous speaker exists, assume it's an agent line
-                elif not formatted_lines:
-                    formatted_lines.append('[AGENT] ' + line)
+        # Belirgin konuşmacı belirleme
+        is_agent = False
+        is_customer = False
+        
+        # Önce açık etiketleri kontrol edelim
+        if re.search(r'^agent\s*:', line.lower()) or re.search(r'\[agent\]', line.lower()):
+            is_agent = True
+            # Etiketi içerikten temizle
+            line = re.sub(r'^agent\s*:', '', line, flags=re.IGNORECASE).strip()
+            line = re.sub(r'\[agent\]', '', line, flags=re.IGNORECASE).strip()
+        elif re.search(r'^customer\s*:', line.lower()) or re.search(r'\[customer\]', line.lower()):
+            is_customer = True
+            # Etiketi içerikten temizle
+            line = re.sub(r'^customer\s*:', '', line, flags=re.IGNORECASE).strip()
+            line = re.sub(r'\[customer\]', '', line, flags=re.IGNORECASE).strip()
+        elif re.search(r'^(reactivation team|carrier service team)\s*:', line.lower()):
+            is_agent = True
+            # Etiketi içerikten temizle
+            line = re.sub(r'^(reactivation team|carrier service team)\s*:', '', line, flags=re.IGNORECASE).strip()
+        else:
+            # Açık etiket yoksa, içeriğe göre tahmin et
+            for indicator in agent_indicators:
+                if indicator in line.lower():
+                    is_agent = True
+                    break
+            
+            for indicator in customer_indicators:
+                if indicator in line.lower():
+                    is_customer = True
+                    break
+        
+        # Konuşma akışından tahmin et
+        if not is_agent and not is_customer:
+            # Önceki konuşmacı devam ediyor mu?
+            if current_speaker:
+                if current_speaker == "AGENT":
+                    is_agent = True
                 else:
-                    # If line doesn't have a speaker prefix but appears after other lines
-                    # Try to determine if it's agent or customer based on pattern
-                    if "thank you for calling" in line.lower() or "my name is" in line.lower():
-                        formatted_lines.append('[AGENT] ' + line)
-                    else:
-                        # Default to customer if unclear
-                        formatted_lines.append('[CUSTOMER] ' + line)
+                    is_customer = True
+            else:
+                # Tahmin edemedik, ilk satır için varsayılan olarak AGENT
+                is_agent = True
+        
+        # İçeriği temizle
+        line = clean_text(line)
+        
+        # Çelişki durumunda hangisinin daha ağır bastığına karar ver
+        if is_agent and is_customer:
+            # Burada bir konuşmacı değişimi olabilir, cümlelere göre bölelim
+            sentences = re.split(r'(?<=[.!?])\s+', line)
+            for sent in sentences:
+                agent_score = sum(1 for ind in agent_indicators if ind in sent.lower())
+                customer_score = sum(1 for ind in customer_indicators if ind in sent.lower())
+                
+                if agent_score > customer_score:
+                    if current_speaker != "AGENT" and current_text:
+                        conversation_parts.append(f"[{current_speaker}] {current_text}")
+                        current_text = ""
+                    current_speaker = "AGENT"
+                    current_text += " " + sent if current_text else sent
+                else:
+                    if current_speaker != "CUSTOMER" and current_text:
+                        conversation_parts.append(f"[{current_speaker}] {current_text}")
+                        current_text = ""
+                    current_speaker = "CUSTOMER"
+                    current_text += " " + sent if current_text else sent
+        else:
+            # Konuşmacıyı belirle
+            if is_agent:
+                if current_speaker != "AGENT" and current_text:
+                    conversation_parts.append(f"[{current_speaker}] {current_text}")
+                    current_text = ""
+                current_speaker = "AGENT"
+            elif is_customer:
+                if current_speaker != "CUSTOMER" and current_text:
+                    conversation_parts.append(f"[{current_speaker}] {current_text}")
+                    current_text = ""
+                current_speaker = "CUSTOMER"
+            
+            # İçeriği ekle
+            current_text += " " + line if current_text else line
     
-    # Ensure at least one agent and customer line exists
-    has_customer = any('[CUSTOMER]' in line for line in formatted_lines)
-    has_agent = any('[AGENT]' in line for line in formatted_lines)
+    # Son konuşmacının içeriğini ekle
+    if current_speaker and current_text:
+        conversation_parts.append(f"[{current_speaker}] {current_text}")
     
-    if not has_customer:
-        formatted_lines.append('[CUSTOMER] Thank you for your assistance')
+    # Konuşma bölümlerini birleştir
+    formatted_conversation = " ".join(conversation_parts)
     
-    if not has_agent:
-        formatted_lines.insert(0, '[AGENT] How may I help you today?')
+    # Gerekli temizlik işlemleri
+    # Çoklu boşlukları düzelt
+    formatted_conversation = re.sub(r'\s+', ' ', formatted_conversation).strip()
     
-    return ' '.join(formatted_lines)
+    # En az bir AGENT ve bir CUSTOMER olduğundan emin ol
+    if "[AGENT]" not in formatted_conversation:
+        formatted_conversation = "[AGENT] How may I help you today? " + formatted_conversation
+    
+    if "[CUSTOMER]" not in formatted_conversation:
+        formatted_conversation += " [CUSTOMER] Thank you for your assistance"
+    
+    return formatted_conversation
 
 def extract_customer_text(conversation):
     """Extract only customer parts from the conversation"""
     if not isinstance(conversation, str):
         return ""
-        
-    lines = conversation.split('\n')
-    customer_lines = []
-    is_customer = False
     
-    for line in lines:
-        line = line.strip()
-        if not line:
+    # Önce konuşmayı formatla (eğer formatlanmamış ise)
+    if "[CUSTOMER]" not in conversation:
+        formatted_conversation = format_conversation(conversation)
+    else:
+        formatted_conversation = conversation
+    
+    # Formatlanmış metinden müşteri kısımlarını çıkar
+    customer_parts = []
+    parts = re.split(r'\[CUSTOMER\]|\[AGENT\]', formatted_conversation)
+    
+    # İlk bölüm etiket öncesi olabilir, onu atla
+    if parts and not formatted_conversation.startswith("[CUSTOMER]"):
+        parts = parts[1:]
+    
+    # Her bir bölüm için konuşmacıyı belirle ve müşteri konuşmalarını topla
+    is_customer = formatted_conversation.startswith("[CUSTOMER]")
+    
+    for part in parts:
+        if not part.strip():
             continue
             
-        if line.startswith('Customer:'):
-            is_customer = True
-            customer_text = line[9:].strip()
-            if customer_text:  # If line is not empty
-                customer_lines.append(customer_text)
-        elif line.startswith('Agent:'):
-            is_customer = False
-        elif is_customer and line:  # If still customer talking and line is not empty
-            customer_lines.append(line)
+        if is_customer:
+            customer_parts.append(part.strip())
+        
+        # Her bölümden sonra konuşmacı değişir
+        is_customer = not is_customer
     
-    return ' '.join(customer_lines)
+    # Müşteri metinlerini birleştir
+    return " ".join(customer_parts)
 
 def create_prompt_template(format_type="full"):
     """Create prompt template for LLM fine-tuning, incorporating key features from analysis"""
@@ -308,13 +437,13 @@ def calculate_sample_weights(train_df):
 
 def prepare_data_for_llm(train_df, test_df, prompt_format="few_shot"):
     """Prepare data for LLM fine-tuning with enhanced preprocessing"""
-    # Format conversations
-    train_df['formatted_conversation'] = train_df['conversation'].apply(format_conversation)
-    test_df['formatted_conversation'] = test_df['conversation'].apply(format_conversation)
+    # Önce metinleri temizle
+    train_df['processed_conversation'] = train_df['conversation'].apply(preprocess_text)
+    test_df['processed_conversation'] = test_df['conversation'].apply(preprocess_text)
     
-    # Preprocess each formatted conversation
-    train_df['formatted_conversation'] = train_df['formatted_conversation'].apply(preprocess_text)
-    test_df['formatted_conversation'] = test_df['formatted_conversation'].apply(preprocess_text)
+    # Sonra formatla (köşeli parantezler ekle)
+    train_df['formatted_conversation'] = train_df['processed_conversation'].apply(format_conversation)
+    test_df['formatted_conversation'] = test_df['processed_conversation'].apply(format_conversation)
     
     # Extract only customer texts
     train_df['customer_text'] = train_df['conversation'].apply(extract_customer_text)
@@ -337,6 +466,12 @@ def prepare_data_for_llm(train_df, test_df, prompt_format="few_shot"):
     
     train_df['customer_exclamation_marks'] = train_df['customer_text'].apply(lambda x: x.count('!'))
     test_df['customer_exclamation_marks'] = test_df['customer_text'].apply(lambda x: x.count('!'))
+    
+    # Sütun temizliği
+    if 'processed_conversation' in train_df.columns:
+        train_df = train_df.drop(columns=['processed_conversation'])
+    if 'processed_conversation' in test_df.columns:
+        test_df = test_df.drop(columns=['processed_conversation'])
     
     # Calculate customer and agent turns - needed for prompt creation in feature_enhanced mode
     train_df['customer_turns'] = train_df['conversation'].apply(
