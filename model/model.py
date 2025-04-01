@@ -1,10 +1,6 @@
 """
-Full definition of a GPT Language Model, all of it in this single file.
-References:
-1) the official GPT-2 TensorFlow implementation released by OpenAI:
-https://github.com/openai/gpt-2/blob/master/src/model.py
-2) huggingface/transformers PyTorch implementation:
-https://github.com/huggingface/transformers/blob/main/src/transformers/models/gpt2/modeling_gpt2.py
+Modified GPT architecture for sentiment analysis in customer service conversations.
+Based on the nanoGPT implementation, but adapted specifically for sentiment classification tasks.
 """
 
 import math
@@ -112,10 +108,20 @@ class GPTConfig:
     n_layer: int = 12
     n_head: int = 12
     n_embd: int = 768
-    dropout: float = 0.0
-    bias: bool = True # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
+    dropout: float = 0.0  # Initially 0
+    sentiment_dropout: float = 0.0  # Separate dropout for sentiment head
+    bias: bool = True
+    num_classes: int = 3  # Sentiment classes: positive, negative, neutral
+    sentiment_labels: list = None
+    
+    def __post_init__(self):
+        if self.sentiment_labels is None:
+            self.sentiment_labels = ['negative', 'neutral', 'positive']
 
 class GPT(nn.Module):
+    """
+    Modified GPT model for sentiment analysis in customer service conversations.
+    """
 
     def __init__(self, config):
         super().__init__()
@@ -130,6 +136,21 @@ class GPT(nn.Module):
             h = nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
             ln_f = LayerNorm(config.n_embd, bias=config.bias),
         ))
+        
+        # Sentiment classification head - using separate sentiment_dropout
+        self.sentiment_head = nn.Sequential(
+            nn.Linear(config.n_embd, 512),
+            nn.LayerNorm(512),
+            nn.GELU(),
+            nn.Dropout(config.sentiment_dropout),
+            nn.Linear(512, 256),
+            nn.LayerNorm(256),
+            nn.GELU(),
+            nn.Dropout(config.sentiment_dropout),
+            nn.Linear(256, config.num_classes)
+        )
+        
+        # Original lm_head for backward compatibility
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         # with weight tying when using torch.compile() some warnings get generated:
         # "UserWarning: functional_call was passed multiple values for tied weights.
@@ -143,6 +164,16 @@ class GPT(nn.Module):
         for pn, p in self.named_parameters():
             if pn.endswith('c_proj.weight'):
                 torch.nn.init.normal_(p, mean=0.0, std=0.02/math.sqrt(2 * config.n_layer))
+
+        # Register parameter for attention - focus on last 100 tokens for sentiment analysis
+        self.register_parameter(
+            "sentiment_attention",
+            nn.Parameter(torch.zeros(1, 1, config.block_size))
+        )
+        with torch.no_grad():
+            # Initialize to focus on the last 100 tokens (or fewer if block_size is smaller)
+            n_focus_tokens = min(100, config.block_size)
+            self.sentiment_attention[:, :, -n_focus_tokens:] = 1.0 / n_focus_tokens
 
         # report number of parameters
         print("number of parameters: %.2fM" % (self.get_num_params()/1e6,))
@@ -168,6 +199,18 @@ class GPT(nn.Module):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
     def forward(self, idx, targets=None):
+        """
+        Forward pass with sentiment classification output
+        
+        Args:
+            idx: input token indices, shape (batch_size, sequence_length)
+            targets: optional sentiment targets for loss calculation, shape (batch_size,)
+                     Values should be 0, 1, or 2 representing negative, neutral, positive
+        
+        Returns:
+            sentiment_logits: logits for sentiment classification
+            loss: classification loss if targets provided, otherwise None
+        """
         device = idx.device
         b, t = idx.size()
         assert t <= self.config.block_size, f"Cannot forward sequence of length {t}, block size is only {self.config.block_size}"
@@ -180,17 +223,26 @@ class GPT(nn.Module):
         for block in self.transformer.h:
             x = block(x)
         x = self.transformer.ln_f(x)
-
+        
+        # Apply attention weights - ensure they're properly normalized and expanded to batch size
+        # First, get the attention weights for the current sequence length and normalize
+        att_raw = self.sentiment_attention[:, :, :t]  # Shape [1, 1, t]
+        att_normalized = F.softmax(att_raw, dim=2)  # Shape [1, 1, t]
+        # Now expand to match the batch size
+        att_weights = att_normalized.expand(b, 1, t)  # Shape [b, 1, t]
+        
+        # Apply attention via batch matrix multiplication
+        pooled = torch.bmm(att_weights, x).squeeze(1)
+        
+        # Pass through enhanced classification head
+        sentiment_logits = self.sentiment_head(pooled)
+        
+        # Calculate loss if targets are provided
+        loss = None
         if targets is not None:
-            # if we are given some desired targets also calculate the loss
-            logits = self.lm_head(x)
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
-        else:
-            # inference-time mini-optimization: only forward the lm_head on the very last position
-            logits = self.lm_head(x[:, [-1], :]) # note: using list [-1] to preserve the time dim
-            loss = None
-
-        return logits, loss
+            loss = F.cross_entropy(sentiment_logits, targets)
+            
+        return sentiment_logits, loss
 
     def crop_block_size(self, block_size):
         # model surgery to decrease the block size if necessary
@@ -202,37 +254,53 @@ class GPT(nn.Module):
         for block in self.transformer.h:
             if hasattr(block.attn, 'bias'):
                 block.attn.bias = block.attn.bias[:,:,:block_size,:block_size]
+        # Update attention weights
+        self.register_parameter(
+            "sentiment_attention",
+            nn.Parameter(torch.zeros(1, 1, block_size))
+        )
+        with torch.no_grad():
+            # Initialize to focus on the last 100 tokens (or fewer if block_size is smaller)
+            n_focus_tokens = min(100, block_size)
+            self.sentiment_attention[:, :, -n_focus_tokens:] = 1.0 / n_focus_tokens
 
     @classmethod
     def from_pretrained(cls, model_type, override_args=None):
+        """
+        Load a pre-trained GPT model and modify it for sentiment analysis
+        """
         assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
         override_args = override_args or {} # default to empty dict
-        # only dropout can be overridden see more notes below
-        assert all(k == 'dropout' for k in override_args)
+        # Allow overriding dropout and num_classes
+        assert all(k in ['dropout', 'sentiment_dropout', 'num_classes'] for k in override_args)
         from transformers import GPT2LMHeadModel
-        print("loading weights from pretrained gpt: %s" % model_type)
+        print(f"loading weights from pretrained gpt: {model_type} for sentiment analysis")
 
-        # n_layer, n_head and n_embd are determined from model_type
         config_args = {
             'gpt2':         dict(n_layer=12, n_head=12, n_embd=768),  # 124M params
             'gpt2-medium':  dict(n_layer=24, n_head=16, n_embd=1024), # 350M params
             'gpt2-large':   dict(n_layer=36, n_head=20, n_embd=1280), # 774M params
             'gpt2-xl':      dict(n_layer=48, n_head=25, n_embd=1600), # 1558M params
         }[model_type]
+        
         print("forcing vocab_size=50257, block_size=1024, bias=True")
         config_args['vocab_size'] = 50257 # always 50257 for GPT model checkpoints
         config_args['block_size'] = 1024 # always 1024 for GPT model checkpoints
         config_args['bias'] = True # always True for GPT model checkpoints
-        # we can override the dropout rate, if desired
-        if 'dropout' in override_args:
-            print(f"overriding dropout rate to {override_args['dropout']}")
-            config_args['dropout'] = override_args['dropout']
-        # create a from-scratch initialized minGPT model
+        
+        # Allow overriding dropout values
+        config_args['dropout'] = override_args.get('dropout', 0.1)  # Default 0.1 for pretrained
+        config_args['sentiment_dropout'] = override_args.get('sentiment_dropout', 0.2)  # Updated to 0.2 default
+        config_args['num_classes'] = override_args.get('num_classes', 3)  # Default to 3 sentiment classes
+        
+        # Create a modified SentimentGPT model
         config = GPTConfig(**config_args)
         model = GPT(config)
         sd = model.state_dict()
         sd_keys = sd.keys()
         sd_keys = [k for k in sd_keys if not k.endswith('.attn.bias')] # discard this mask / buffer, not a param
+        sd_keys = [k for k in sd_keys if not k.startswith('sentiment_head')] # Skip sentiment head params
+        sd_keys = [k for k in sd_keys if not k == 'sentiment_attention'] # Skip sentiment attention params
 
         # init a huggingface/transformers model
         model_hf = GPT2LMHeadModel.from_pretrained(model_type)
@@ -243,88 +311,104 @@ class GPT(nn.Module):
         sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.masked_bias')] # ignore these, just a buffer
         sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.bias')] # same, just the mask (buffer)
         transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
-        # basically the openai checkpoints use a "Conv1D" module, but we only want to use a vanilla Linear
-        # this means that we have to transpose these weights when we import them
-        assert len(sd_keys_hf) == len(sd_keys), f"mismatched keys: {len(sd_keys_hf)} != {len(sd_keys)}"
-        for k in sd_keys_hf:
-            if any(k.endswith(w) for w in transposed):
-                # special treatment for the Conv1D weights we need to transpose
-                assert sd_hf[k].shape[::-1] == sd[k].shape
-                with torch.no_grad():
-                    sd[k].copy_(sd_hf[k].t())
-            else:
-                # vanilla copy over the other parameters
-                assert sd_hf[k].shape == sd[k].shape
-                with torch.no_grad():
-                    sd[k].copy_(sd_hf[k])
-
+        
+        for k in sd_keys:
+            if k in sd_keys_hf:
+                if any(k.endswith(w) for w in transposed):
+                    # Special treatment for Conv1D weights
+                    assert sd_hf[k].shape[::-1] == sd[k].shape
+                    with torch.no_grad():
+                        sd[k].copy_(sd_hf[k].t())
+                else:
+                    # Vanilla copy for other parameters
+                    assert sd_hf[k].shape == sd[k].shape
+                    with torch.no_grad():
+                        sd[k].copy_(sd_hf[k])
+        
+        print("Loaded pre-trained GPT weights and modified for sentiment analysis task")
         return model
 
     def configure_optimizers(self, weight_decay, learning_rate, betas, device_type):
-        # start with all of the candidate parameters
-        param_dict = {pn: p for pn, p in self.named_parameters()}
-        # filter out those that do not require grad
-        param_dict = {pn: p for pn, p in param_dict.items() if p.requires_grad}
-        # create optim groups. Any parameters that is 2D will be weight decayed, otherwise no.
-        # i.e. all weight tensors in matmuls + embeddings decay, all biases and layernorms don't.
-        decay_params = [p for n, p in param_dict.items() if p.dim() >= 2]
-        nodecay_params = [p for n, p in param_dict.items() if p.dim() < 2]
+        # Set up parameter groups
+        sentiment_params = []
+        transformer_params = []
+        
+        for n, p in self.named_parameters():
+            if 'sentiment_head' in n or n == 'sentiment_attention':
+                sentiment_params.append(p)
+            else:
+                transformer_params.append(p)
+        
+        # Create optimizer groups with different learning rates
         optim_groups = [
-            {'params': decay_params, 'weight_decay': weight_decay},
-            {'params': nodecay_params, 'weight_decay': 0.0}
+            {'params': sentiment_params, 'weight_decay': 0.0, 'lr': learning_rate * 20.0},  # Higher LR for new parameters (20x)
+            {'params': transformer_params, 'weight_decay': weight_decay, 'lr': learning_rate}
         ]
-        num_decay_params = sum(p.numel() for p in decay_params)
-        num_nodecay_params = sum(p.numel() for p in nodecay_params)
-        print(f"num decayed parameter tensors: {len(decay_params)}, with {num_decay_params:,} parameters")
-        print(f"num non-decayed parameter tensors: {len(nodecay_params)}, with {num_nodecay_params:,} parameters")
-        # Create AdamW optimizer and use the fused version if it is available
+        
+        # Create AdamW optimizer
         fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters
         use_fused = fused_available and device_type == 'cuda'
         extra_args = dict(fused=True) if use_fused else dict()
-        optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas, **extra_args)
-        print(f"using fused AdamW: {use_fused}")
-
+        optimizer = torch.optim.AdamW(optim_groups, betas=betas, **extra_args)
+        print(f"Using fused AdamW: {use_fused}, with 20x higher learning rate for sentiment head")
+        
         return optimizer
 
-    def estimate_mfu(self, fwdbwd_per_iter, dt):
-        """ estimate model flops utilization (MFU) in units of A100 bfloat16 peak FLOPS """
-        # first estimate the number of flops we do per iteration.
-        # see PaLM paper Appendix B as ref: https://arxiv.org/abs/2204.02311
-        N = self.get_num_params()
-        cfg = self.config
-        L, H, Q, T = cfg.n_layer, cfg.n_head, cfg.n_embd//cfg.n_head, cfg.block_size
-        flops_per_token = 6*N + 12*L*H*Q*T
-        flops_per_fwdbwd = flops_per_token * T
-        flops_per_iter = flops_per_fwdbwd * fwdbwd_per_iter
-        # express our flops throughput as ratio of A100 bfloat16 peak flops
-        flops_achieved = flops_per_iter * (1.0/dt) # per second
-        flops_promised = 312e12 # A100 GPU bfloat16 peak flops is 312 TFLOPS
-        mfu = flops_achieved / flops_promised
-        return mfu
-
-    @torch.no_grad()
-    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None):
+    def predict_sentiment(self, idx):
         """
-        Take a conditioning sequence of indices idx (LongTensor of shape (b,t)) and complete
-        the sequence max_new_tokens times, feeding the predictions back into the model each time.
-        Most likely you'll want to make sure to be in model.eval() mode of operation for this.
+        Predict sentiment for the given token sequence
+        
+        Args:
+            idx: input token indices, shape (batch_size, sequence_length)
+            
+        Returns:
+            sentiment_preds: predicted sentiment class indices
+            probabilities: softmax probabilities for each class
         """
-        for _ in range(max_new_tokens):
-            # if the sequence context is growing too long we must crop it at block_size
-            idx_cond = idx if idx.size(1) <= self.config.block_size else idx[:, -self.config.block_size:]
-            # forward the model to get the logits for the index in the sequence
-            logits, _ = self(idx_cond)
-            # pluck the logits at the final step and scale by desired temperature
-            logits = logits[:, -1, :] / temperature
-            # optionally crop the logits to only the top k options
-            if top_k is not None:
-                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
-                logits[logits < v[:, [-1]]] = -float('Inf')
-            # apply softmax to convert logits to (normalized) probabilities
-            probs = F.softmax(logits, dim=-1)
-            # sample from the distribution
-            idx_next = torch.multinomial(probs, num_samples=1)
-            # append sampled index to the running sequence and continue
-            idx = torch.cat((idx, idx_next), dim=1)
+        with torch.no_grad():
+            logits, _ = self.forward(idx)
+            probabilities = F.softmax(logits, dim=-1)
+            sentiment_preds = torch.argmax(probabilities, dim=-1)
+        
+        return sentiment_preds, probabilities
+        
+    def get_sentiment_label(self, idx):
+        """
+        Get the text label from the predicted class index
+        
+        Args:
+            idx: predicted class index
+            
+        Returns:
+            label: text sentiment label
+        """
+        labels = self.config.sentiment_labels
+        if isinstance(idx, torch.Tensor):
+            idx = idx.item()
+        return labels[idx]
 
-        return idx
+# Function to create model compatible with train_scratch.py
+def create_sentiment_model(args):
+    """
+    Create a sentiment analysis model from train_scratch.py arguments
+    
+    Args:
+        args: arguments from train_scratch.py
+        
+    Returns:
+        model: GPT model for sentiment analysis
+    """
+    config = GPTConfig(
+        block_size=args.block_size,
+        vocab_size=args.vocab_size if hasattr(args, 'vocab_size') else 50304,
+        n_layer=args.n_layer,
+        n_head=args.n_head,
+        n_embd=args.n_embd,
+        dropout=args.dropout,  # Dropout value will be taken from train_scratch.py
+        sentiment_dropout=getattr(args, 'sentiment_dropout', 0.0),  # Default to 0.0 if not provided
+        bias=True,
+        num_classes=3
+    )
+    
+    model = GPT(config)
+    return model

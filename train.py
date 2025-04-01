@@ -2,6 +2,8 @@
 This training script can be run both on a single gpu in debug mode,
 and also in a larger training run with distributed data parallel (ddp).
 
+Modified to support sentiment analysis using CSV data from /data/subdata.
+
 To run on a single GPU, example:
 $ python train.py --batch_size=32 --compile=False
 
@@ -23,14 +25,78 @@ import pickle
 from contextlib import nullcontext
 
 import numpy as np
+import pandas as pd
 import torch
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
+from torch.utils.data import Dataset, DataLoader
+from sklearn.metrics import accuracy_score, f1_score, confusion_matrix, precision_score, recall_score
+from transformers import GPT2Tokenizer  # Import GPT-2 tokenizer
+import torch.nn.functional as F
 
 from model.model import GPTConfig, GPT
 
 # -----------------------------------------------------------------------------
-# default config values designed to train a gpt2 (124M) on OpenWebText
+# Custom dataset for sentiment analysis with CSV files
+class SentimentDataset(Dataset):
+    def __init__(self, csv_path, block_size=1024):
+        self.df = pd.read_csv(csv_path)
+        self.block_size = block_size
+        
+        print(f"Loading data from {csv_path}")
+        
+        # Initialize the GPT2 tokenizer
+        self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+        # If needed, set padding token
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+        
+        # Process the data
+        self.examples = []
+        self.labels = []
+        
+        for idx, row in self.df.iterrows():
+            # Get prompt text
+            if 'prompt' in row:
+                text = str(row['prompt'])
+                # Use GPT2 tokenizer instead of character-level tokenization
+                tokens = self.tokenizer.encode(
+                    text,
+                    add_special_tokens=True,  # Add [CLS], [SEP]
+                    max_length=block_size,    # Truncate to block_size
+                    padding='max_length',     # Pad to block_size
+                    truncation=True           # Truncate to max_length
+                )
+                
+                self.examples.append(tokens)
+                
+                # Get sentiment label
+                if 'customer_sentiment' in row:
+                    sentiment = row['customer_sentiment']
+                    sentiment_map = {'negative': 0, 'neutral': 1, 'positive': 2}
+                    sentiment_idx = sentiment_map.get(sentiment, 1)  # Default to neutral
+                    self.labels.append(sentiment_idx)
+                else:
+                    # Default to neutral if no label is provided
+                    self.labels.append(1)
+        
+        print(f"Loaded {len(self.examples)} examples from {csv_path}")
+        
+        # Print some stats about token lengths
+        lengths = [len(x) for x in self.examples]
+        print(f"Average token length: {sum(lengths)/len(lengths):.1f}, Max: {max(lengths)}, Min: {min(lengths)}")
+    
+    def __len__(self):
+        return len(self.examples)
+    
+    def __getitem__(self, idx):
+        return {
+            'input_ids': torch.tensor(self.examples[idx], dtype=torch.long),
+            'label': torch.tensor(self.labels[idx], dtype=torch.long)
+        }
+
+# -----------------------------------------------------------------------------
+# default config values designed to train a sentiment classifier
 # I/O
 out_dir = 'out'
 eval_interval = 2000
@@ -43,6 +109,9 @@ init_from = 'scratch' # 'scratch' or 'resume' or 'gpt2*'
 wandb_log = False # disabled by default
 wandb_project = 'owt'
 wandb_run_name = 'gpt2' # 'run' + str(time.time())
+# validation specifics
+validation_interval = eval_interval  # Validation interval, default is the same as eval_interval
+validation_at_epoch_end = False  # Run validation at the end of each epoch
 # data
 dataset = 'openwebtext'
 gradient_accumulation_steps = 5 * 8 # used to simulate larger batch sizes
@@ -76,6 +145,11 @@ compile = True # use PyTorch 2.0 to compile the model to be faster
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
 exec(open('configurator.py').read()) # overrides from command line or config file
 config = {k: globals()[k] for k in config_keys} # will be useful for logging
+
+# Store the output directory path to ensure it's consistent throughout execution
+checkpoint_dir = out_dir
+print(f"Using configuration: init_from={init_from}, out_dir={out_dir}, checkpoint_dir={checkpoint_dir}")
+print(f"Will save checkpoints to {os.path.abspath(checkpoint_dir)}")
 # -----------------------------------------------------------------------------
 
 # various inits, derived attributes, I/O setup
@@ -102,7 +176,7 @@ tokens_per_iter = gradient_accumulation_steps * ddp_world_size * batch_size * bl
 print(f"tokens per iteration will be: {tokens_per_iter:,}")
 
 if master_process:
-    os.makedirs(out_dir, exist_ok=True)
+    os.makedirs(checkpoint_dir, exist_ok=True)
 torch.manual_seed(1337 + seed_offset)
 torch.backends.cuda.matmul.allow_tf32 = True # allow tf32 on matmul
 torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
@@ -111,37 +185,47 @@ device_type = 'cuda' if 'cuda' in device else 'cpu' # for later use in torch.aut
 ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
 ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 
-# poor man's data loader
-data_dir = os.path.join('data', dataset)
-def get_batch(split):
-    # We recreate np.memmap every batch to avoid a memory leak, as per
-    # https://stackoverflow.com/questions/45132940/numpy-memmap-memory-usage-want-to-iterate-once/61472122#61472122
-    if split == 'train':
-        data = np.memmap(os.path.join(data_dir, 'train.bin'), dtype=np.uint16, mode='r')
-    else:
-        data = np.memmap(os.path.join(data_dir, 'val.bin'), dtype=np.uint16, mode='r')
-    ix = torch.randint(len(data) - block_size, (batch_size,))
-    x = torch.stack([torch.from_numpy((data[i:i+block_size]).astype(np.int64)) for i in ix])
-    y = torch.stack([torch.from_numpy((data[i+1:i+1+block_size]).astype(np.int64)) for i in ix])
-    if device_type == 'cuda':
-        # pin arrays x,y, which allows us to move them to GPU asynchronously (non_blocking=True)
-        x, y = x.pin_memory().to(device, non_blocking=True), y.pin_memory().to(device, non_blocking=True)
-    else:
-        x, y = x.to(device), y.to(device)
-    return x, y
+# Setup data loaders for sentiment analysis
+def get_data_loaders():
+    data_dir = os.path.join('data', dataset)
+    
+    # Train dataset
+    train_dataset = SentimentDataset(
+        csv_path=os.path.join(data_dir, 'train.csv'),
+        block_size=block_size
+    )
+    
+    # Validation dataset
+    val_dataset = SentimentDataset(
+        csv_path=os.path.join(data_dir, 'validation.csv'),
+        block_size=block_size
+    )
+    
+    # Train loader
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=not ddp,
+        sampler=torch.utils.data.distributed.DistributedSampler(train_dataset) if ddp else None,
+        pin_memory=True,
+    )
+    
+    # Validation loader
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        pin_memory=True,
+    )
+    
+    return train_loader, val_loader
+
+# Load data
+train_loader, val_loader = get_data_loaders()
 
 # init these up here, can override if init_from='resume' (i.e. from a checkpoint)
 iter_num = 0
 best_val_loss = 1e9
-
-# attempt to derive vocab_size from the dataset
-meta_path = os.path.join(data_dir, 'meta.pkl')
-meta_vocab_size = None
-if os.path.exists(meta_path):
-    with open(meta_path, 'rb') as f:
-        meta = pickle.load(f)
-    meta_vocab_size = meta['vocab_size']
-    print(f"found vocab_size = {meta_vocab_size} (inside {meta_path})")
 
 # model init
 model_args = dict(n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=block_size,
@@ -149,21 +233,20 @@ model_args = dict(n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=bloc
 if init_from == 'scratch':
     # init a new model from scratch
     print("Initializing a new model from scratch")
-    # determine the vocab size we'll use for from-scratch training
-    if meta_vocab_size is None:
-        print("defaulting to vocab_size of GPT-2 to 50304 (50257 rounded up for efficiency)")
-    model_args['vocab_size'] = meta_vocab_size if meta_vocab_size is not None else 50304
+    # We'll use simple character-level tokenization with 256 possible values
+    model_args['vocab_size'] = 256  # Character-level tokenization
+    model_args['num_classes'] = 3   # negative, neutral, positive
     gptconf = GPTConfig(**model_args)
     model = GPT(gptconf)
 elif init_from == 'resume':
-    print(f"Resuming training from {out_dir}")
+    print(f"Resuming training from {checkpoint_dir}")
     # resume training from a checkpoint.
-    ckpt_path = os.path.join(out_dir, 'ckpt.pt')
+    ckpt_path = os.path.join(checkpoint_dir, 'ckpt.pt')
     checkpoint = torch.load(ckpt_path, map_location=device)
     checkpoint_model_args = checkpoint['model_args']
     # force these config attributes to be equal otherwise we can't even resume training
     # the rest of the attributes (e.g. dropout) can stay as desired from command line
-    for k in ['n_layer', 'n_head', 'n_embd', 'block_size', 'bias', 'vocab_size']:
+    for k in ['n_layer', 'n_head', 'n_embd', 'block_size', 'bias', 'vocab_size', 'num_classes']:
         model_args[k] = checkpoint_model_args[k]
     # create the model
     gptconf = GPTConfig(**model_args)
@@ -186,6 +269,8 @@ elif init_from.startswith('gpt2'):
     # read off the created config params, so we can store them into checkpoint correctly
     for k in ['n_layer', 'n_head', 'n_embd', 'block_size', 'bias', 'vocab_size']:
         model_args[k] = getattr(model.config, k)
+    # Add num_classes for sentiment analysis
+    model_args['num_classes'] = 3  # negative, neutral, positive
 # crop down the model block size if desired, using model surgery
 if block_size < model.config.block_size:
     model.crop_block_size(block_size)
@@ -211,21 +296,56 @@ if compile:
 if ddp:
     model = DDP(model, device_ids=[ddp_local_rank])
 
-# helps estimate an arbitrarily accurate loss over either split using many batches
+# Evaluate function for sentiment analysis
 @torch.no_grad()
-def estimate_loss():
-    out = {}
+def evaluate():
     model.eval()
-    for split in ['train', 'val']:
-        losses = torch.zeros(eval_iters)
-        for k in range(eval_iters):
-            X, Y = get_batch(split)
-            with ctx:
-                logits, loss = model(X, Y)
-            losses[k] = loss.item()
-        out[split] = losses.mean()
+    losses = []
+    all_preds = []
+    all_labels = []
+    
+    for batch in val_loader:
+        input_ids = batch['input_ids'].to(device)
+        labels = batch['label'].to(device)
+        
+        with ctx:
+            logits, loss = model(input_ids, labels)
+        
+        losses.append(loss.item())
+        
+        preds = torch.argmax(logits, dim=-1)
+        all_preds.extend(preds.cpu().numpy())
+        all_labels.extend(labels.cpu().numpy())
+    
+    # Calculate metrics
+    accuracy = accuracy_score(all_labels, all_preds)
+    f1 = f1_score(all_labels, all_preds, average='weighted')
+    conf_matrix = confusion_matrix(all_labels, all_preds)
+    
+    # Calculate class-specific metrics
+    class_names = ['negative', 'neutral', 'positive']
+    precision_per_class = precision_score(all_labels, all_preds, average=None, zero_division=0)
+    recall_per_class = recall_score(all_labels, all_preds, average=None, zero_division=0)
+    f1_per_class = f1_score(all_labels, all_preds, average=None, zero_division=0)
+    
+    class_metrics = {}
+    for i, class_name in enumerate(class_names):
+        class_metrics[f'precision_{class_name}'] = precision_per_class[i]
+        class_metrics[f'recall_{class_name}'] = recall_per_class[i]
+        class_metrics[f'f1_{class_name}'] = f1_per_class[i]
+    
+    results = {
+        'loss': torch.tensor(losses).mean().item(),
+        'accuracy': accuracy,
+        'f1_score': f1,
+        'confusion_matrix': conf_matrix,
+        'class_metrics': class_metrics,
+        'all_preds': all_preds,
+        'all_labels': all_labels
+    }
+    
     model.train()
-    return out
+    return results
 
 # learning rate decay scheduler (cosine with warmup)
 def get_lr(it):
@@ -247,33 +367,142 @@ if wandb_log and master_process:
     wandb.init(project=wandb_project, name=wandb_run_name, config=config)
 
 # training loop
-X, Y = get_batch('train') # fetch the very first batch
 t0 = time.time()
 local_iter_num = 0 # number of iterations in the lifetime of this process
 raw_model = model.module if ddp else model # unwrap DDP container if needed
-running_mfu = -1.0
-while True:
+running_loss = 0
 
+print("Starting training")
+model.train()
+
+# First evaluation at iter 0
+if master_process:
+    results = evaluate()
+    print(f"step {iter_num}: val loss {results['loss']:.4f}, val accuracy {results['accuracy']:.4f}")
+    
+    # Save the initial checkpoint regardless of iter_num
+    try:
+        checkpoint = {
+            'model': raw_model.state_dict(),
+            'optimizer': optimizer.state_dict(),
+            'model_args': model_args,
+            'iter_num': iter_num,
+            'best_val_loss': best_val_loss,
+            'config': config,
+        }
+        
+        # Ensure output directory exists
+        os.makedirs(checkpoint_dir, exist_ok=True)
+        
+        checkpoint_path = os.path.join(checkpoint_dir, 'ckpt.pt')
+        print(f"Saving initial checkpoint to {checkpoint_path}")
+        
+        # Save the checkpoint
+        torch.save(checkpoint, checkpoint_path)
+        
+        # Verify the checkpoint was saved successfully
+        if os.path.exists(checkpoint_path):
+            print(f"Initial checkpoint saved successfully: {os.path.getsize(checkpoint_path) / (1024*1024):.2f} MB")
+        else:
+            print(f"WARNING: Failed to save initial checkpoint to {checkpoint_path}")
+    except Exception as e:
+        print(f"ERROR saving initial checkpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        
+if eval_only:
+    print("eval_only mode, exiting")
+    exit()
+
+while True:
     # determine and set the learning rate for this iteration
     lr = get_lr(iter_num) if decay_lr else learning_rate
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
     # evaluate the loss on train/val sets and write checkpoints
-    if iter_num % eval_interval == 0 and master_process:
-        losses = estimate_loss()
-        print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+    if iter_num % validation_interval == 0 and master_process:
+        # Verify out_dir before validation
+        print(f"Before validation at iter {iter_num}, using checkpoint_dir: {checkpoint_dir}")
+        print(f"Directory exists: {os.path.exists(checkpoint_dir)}")
+        
+        results = evaluate()
+        print(f"step {iter_num}: val loss {results['loss']:.4f}, val accuracy {results['accuracy']:.4f}")
+        
+        # Track best metrics
+        best_metrics = {}
+        if not hasattr(evaluate, 'best_metrics'):
+            evaluate.best_metrics = {
+                'best_loss': float('inf'),
+                'best_accuracy': 0.0,
+                'best_f1': 0.0,
+                'best_iter': 0
+            }
+        
+        # Update best results
+        if results['loss'] < evaluate.best_metrics['best_loss']:
+            evaluate.best_metrics['best_loss'] = results['loss'] 
+            evaluate.best_metrics['best_iter'] = iter_num
+        
+        if results['accuracy'] > evaluate.best_metrics['best_accuracy']:
+            evaluate.best_metrics['best_accuracy'] = results['accuracy']
+            
+        if results['f1_score'] > evaluate.best_metrics['best_f1']:
+            evaluate.best_metrics['best_f1'] = results['f1_score']
+        
         if wandb_log:
-            wandb.log({
+            # Log detailed validation metrics to wandb
+            conf_matrix = results['confusion_matrix']
+            class_names = ['negative', 'neutral', 'positive']
+            
+            # Add class-specific metrics to the log
+            class_metrics = results['class_metrics']
+            wandb_logs = {
                 "iter": iter_num,
-                "train/loss": losses['train'],
-                "val/loss": losses['val'],
+                "val/loss": results['loss'],
+                "val/accuracy": results['accuracy'],
+                "val/f1_score": results['f1_score'],
                 "lr": lr,
-                "mfu": running_mfu*100, # convert to percentage
-            })
-        if losses['val'] < best_val_loss or always_save_checkpoint:
-            best_val_loss = losses['val']
-            if iter_num > 0:
+                "progress": iter_num / max_iters * 100,  # Progress percentage
+                
+                # Include best values
+                "best/loss": evaluate.best_metrics['best_loss'],
+                "best/accuracy": evaluate.best_metrics['best_accuracy'],
+                "best/f1": evaluate.best_metrics['best_f1'],
+                "best/iter": evaluate.best_metrics['best_iter']
+            }
+            
+            # Add class metrics
+            for metric_name, value in class_metrics.items():
+                wandb_logs[f"val/{metric_name}"] = value
+            
+            # Visualization of confusion matrix
+            if 'plot' in dir(wandb):
+                # First log the confusion matrix directly (safer method)
+                for i, class_name_i in enumerate(class_names):
+                    for j, class_name_j in enumerate(class_names):
+                        wandb_logs[f"val/conf_matrix_{class_name_i}_{class_name_j}"] = conf_matrix[i][j]
+                
+                # Also create wandb table using all predictions and true labels
+                try:
+                    wandb_logs["val/conf_matrix"] = wandb.plot.confusion_matrix(
+                        y_true=results['all_labels'],
+                        preds=results['all_preds'],
+                        class_names=class_names
+                    )
+                except Exception as e:
+                    print(f"Wandb confusion matrix visualization error: {e}")
+            else:
+                # Log confusion matrix directly
+                for i, class_name_i in enumerate(class_names):
+                    for j, class_name_j in enumerate(class_names):
+                        wandb_logs[f"val/conf_matrix_{class_name_i}_{class_name_j}"] = conf_matrix[i][j]
+            
+            wandb.log(wandb_logs)
+        
+        # Always save checkpoint at each validation interval
+        if iter_num > 0:
+            try:
                 checkpoint = {
                     'model': raw_model.state_dict(),
                     'optimizer': optimizer.state_dict(),
@@ -282,55 +511,93 @@ while True:
                     'best_val_loss': best_val_loss,
                     'config': config,
                 }
-                print(f"saving checkpoint to {out_dir}")
-                torch.save(checkpoint, os.path.join(out_dir, 'ckpt.pt'))
+                
+                # Ensure output directory exists
+                os.makedirs(checkpoint_dir, exist_ok=True)
+                
+                checkpoint_path = os.path.join(checkpoint_dir, 'ckpt.pt')
+                print(f"Saving checkpoint to {checkpoint_path}")
+                
+                # Save the checkpoint
+                torch.save(checkpoint, checkpoint_path)
+                
+                # Verify the checkpoint was saved successfully
+                if os.path.exists(checkpoint_path):
+                    print(f"Checkpoint saved successfully: {os.path.getsize(checkpoint_path) / (1024*1024):.2f} MB")
+                else:
+                    print(f"WARNING: Failed to save checkpoint to {checkpoint_path}")
+            except Exception as e:
+                print(f"ERROR saving checkpoint: {e}")
+                import traceback
+                traceback.print_exc()
+        
     if iter_num == 0 and eval_only:
         break
 
-    # forward backward update, with optional gradient accumulation to simulate larger batch size
-    # and using the GradScaler if data type is float16
-    for micro_step in range(gradient_accumulation_steps):
-        if ddp:
-            # in DDP training we only need to sync gradients at the last micro step.
-            # the official way to do this is with model.no_sync() context manager, but
-            # I really dislike that this bloats the code and forces us to repeat code
-            # looking at the source of that context manager, it just toggles this variable
-            model.require_backward_grad_sync = (micro_step == gradient_accumulation_steps - 1)
+    # Training loop
+    for batch in train_loader:
+        # Get batch
+        input_ids = batch['input_ids'].to(device)
+        labels = batch['label'].to(device)
+        
+        # Forward pass through the model
         with ctx:
-            logits, loss = model(X, Y)
-            loss = loss / gradient_accumulation_steps # scale the loss to account for gradient accumulation
-        # immediately async prefetch next batch while model is doing the forward pass on the GPU
-        X, Y = get_batch('train')
-        # backward pass, with gradient scaling if training in fp16
+            logits, loss = model(input_ids, labels)
+            loss = loss / gradient_accumulation_steps  # Scale for gradient accumulation
+        
+        # Backward pass
         scaler.scale(loss).backward()
-    # clip the gradient
-    if grad_clip != 0.0:
-        scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-    # step the optimizer and scaler if training in fp16
-    scaler.step(optimizer)
-    scaler.update()
-    # flush the gradients as soon as we can, no need for this memory anymore
-    optimizer.zero_grad(set_to_none=True)
-
-    # timing and logging
-    t1 = time.time()
-    dt = t1 - t0
-    t0 = t1
-    if iter_num % log_interval == 0 and master_process:
-        # get loss as float. note: this is a CPU-GPU sync point
-        # scale up to undo the division above, approximating the true total loss (exact would have been a sum)
-        lossf = loss.item() * gradient_accumulation_steps
-        if local_iter_num >= 5: # let the training loop settle a bit
-            mfu = raw_model.estimate_mfu(batch_size * gradient_accumulation_steps, dt)
-            running_mfu = mfu if running_mfu == -1.0 else 0.9*running_mfu + 0.1*mfu
-        print(f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms, mfu {running_mfu*100:.2f}%")
-    iter_num += 1
-    local_iter_num += 1
-
-    # termination conditions
-    if iter_num > max_iters:
+        
+        # Update weights
+        if (iter_num + 1) % gradient_accumulation_steps == 0:
+            # Clip gradients
+            if grad_clip != 0.0:
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            
+            # Step optimizer and update scaler
+            scaler.step(optimizer)
+            scaler.update()
+            optimizer.zero_grad(set_to_none=True)
+        
+        # Update loss tracking
+        running_loss += loss.item() * gradient_accumulation_steps
+        
+        # Logging
+        if iter_num % log_interval == 0 and master_process:
+            print(f"iter {iter_num}: loss {running_loss/log_interval:.4f}, lr {lr:.6f}")
+            if wandb_log:
+                wandb.log({
+                    "iter": iter_num,
+                    "train/loss": running_loss/log_interval,
+                    "lr": lr,
+                })
+            running_loss = 0.0
+        
+        # Update iteration counters
+        iter_num += 1
+        local_iter_num += 1
+        
+        # Check termination condition
+        if iter_num >= max_iters:
+            break
+    
+    if iter_num >= max_iters:
         break
+
+# Final evaluation
+if master_process:
+    results = evaluate()
+    print(f"Final results: val loss {results['loss']:.4f}, val accuracy {results['accuracy']:.4f}, val f1 {results['f1_score']:.4f}")
+    print("Confusion Matrix:")
+    print(results['confusion_matrix'])
+    
+    print("\nClass-specific metrics:")
+    for class_name in ['negative', 'neutral', 'positive']:
+        print(f"  {class_name.capitalize()} - ",
+              f"Precision: {results['class_metrics'][f'precision_{class_name}']:.4f}, ",
+              f"Recall: {results['class_metrics'][f'recall_{class_name}']:.4f}, ",
+              f"F1: {results['class_metrics'][f'f1_{class_name}']:.4f}")
 
 if ddp:
     destroy_process_group()
