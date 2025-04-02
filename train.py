@@ -64,9 +64,14 @@ class SentimentDataset(Dataset):
                     text,
                     add_special_tokens=True,  # Add [CLS], [SEP]
                     max_length=block_size,    # Truncate to block_size
-                    padding='max_length',     # Pad to block_size
                     truncation=True           # Truncate to max_length
                 )
+                
+                # Pad/truncate to exactly block_size tokens for consistent length
+                if len(tokens) > block_size:
+                    tokens = tokens[:block_size]
+                else:
+                    tokens = tokens + [self.tokenizer.pad_token_id] * (block_size - len(tokens))
                 
                 self.examples.append(tokens)
                 
@@ -106,14 +111,14 @@ eval_only = False # if True, script exits right after the first eval
 always_save_checkpoint = True # if True, always save a checkpoint after each eval
 init_from = 'scratch' # 'scratch' or 'resume' or 'gpt2*'
 # wandb logging
-wandb_log = False # disabled by default
-wandb_project = 'owt'
-wandb_run_name = 'gpt2' # 'run' + str(time.time())
+wandb_log = True # Wandb log enabled
+wandb_project = 'sentiment-analysis' # Project name updated
+wandb_run_name = 'sentiment_' + str(int(time.time())) # Unique run name
 # validation specifics
-validation_interval = eval_interval  # Validation interval, default is the same as eval_interval
+validation_interval = 250  # Validation interval, now done every 250 iterations
 validation_at_epoch_end = False  # Run validation at the end of each epoch
 # data
-dataset = 'openwebtext'
+dataset = 'subdata'
 gradient_accumulation_steps = 5 * 8 # used to simulate larger batch sizes
 batch_size = 12 # if gradient_accumulation_steps > 1, this is the micro-batch size
 block_size = 1024
@@ -233,8 +238,9 @@ model_args = dict(n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=bloc
 if init_from == 'scratch':
     # init a new model from scratch
     print("Initializing a new model from scratch")
-    # We'll use simple character-level tokenization with 256 possible values
-    model_args['vocab_size'] = 256  # Character-level tokenization
+    # Use GPT2 tokenizer vocabulary size instead of 256
+    tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+    model_args['vocab_size'] = len(tokenizer)  # GPT2 tokenizer vocabulary size
     model_args['num_classes'] = 3   # negative, neutral, positive
     gptconf = GPTConfig(**model_args)
     model = GPT(gptconf)
@@ -375,10 +381,11 @@ running_loss = 0
 print("Starting training")
 model.train()
 
+# Remove initial evaluation
 # First evaluation at iter 0
 if master_process:
-    results = evaluate()
-    print(f"step {iter_num}: val loss {results['loss']:.4f}, val accuracy {results['accuracy']:.4f}")
+    # results = evaluate()
+    # print(f"step {iter_num}: val loss {results['loss']:.4f}, val accuracy {results['accuracy']:.4f}")
     
     # Save the initial checkpoint regardless of iter_num
     try:
@@ -409,132 +416,19 @@ if master_process:
         print(f"ERROR saving initial checkpoint: {e}")
         import traceback
         traceback.print_exc()
-        
+
 if eval_only:
     print("eval_only mode, exiting")
     exit()
 
+# Main training loop
 while True:
     # determine and set the learning rate for this iteration
     lr = get_lr(iter_num) if decay_lr else learning_rate
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
-    # evaluate the loss on train/val sets and write checkpoints
-    if iter_num % validation_interval == 0 and master_process:
-        # Verify out_dir before validation
-        print(f"Before validation at iter {iter_num}, using checkpoint_dir: {checkpoint_dir}")
-        print(f"Directory exists: {os.path.exists(checkpoint_dir)}")
-        
-        results = evaluate()
-        print(f"step {iter_num}: val loss {results['loss']:.4f}, val accuracy {results['accuracy']:.4f}")
-        
-        # Track best metrics
-        best_metrics = {}
-        if not hasattr(evaluate, 'best_metrics'):
-            evaluate.best_metrics = {
-                'best_loss': float('inf'),
-                'best_accuracy': 0.0,
-                'best_f1': 0.0,
-                'best_iter': 0
-            }
-        
-        # Update best results
-        if results['loss'] < evaluate.best_metrics['best_loss']:
-            evaluate.best_metrics['best_loss'] = results['loss'] 
-            evaluate.best_metrics['best_iter'] = iter_num
-        
-        if results['accuracy'] > evaluate.best_metrics['best_accuracy']:
-            evaluate.best_metrics['best_accuracy'] = results['accuracy']
-            
-        if results['f1_score'] > evaluate.best_metrics['best_f1']:
-            evaluate.best_metrics['best_f1'] = results['f1_score']
-        
-        if wandb_log:
-            # Log detailed validation metrics to wandb
-            conf_matrix = results['confusion_matrix']
-            class_names = ['negative', 'neutral', 'positive']
-            
-            # Add class-specific metrics to the log
-            class_metrics = results['class_metrics']
-            wandb_logs = {
-                "iter": iter_num,
-                "val/loss": results['loss'],
-                "val/accuracy": results['accuracy'],
-                "val/f1_score": results['f1_score'],
-                "lr": lr,
-                "progress": iter_num / max_iters * 100,  # Progress percentage
-                
-                # Include best values
-                "best/loss": evaluate.best_metrics['best_loss'],
-                "best/accuracy": evaluate.best_metrics['best_accuracy'],
-                "best/f1": evaluate.best_metrics['best_f1'],
-                "best/iter": evaluate.best_metrics['best_iter']
-            }
-            
-            # Add class metrics
-            for metric_name, value in class_metrics.items():
-                wandb_logs[f"val/{metric_name}"] = value
-            
-            # Visualization of confusion matrix
-            if 'plot' in dir(wandb):
-                # First log the confusion matrix directly (safer method)
-                for i, class_name_i in enumerate(class_names):
-                    for j, class_name_j in enumerate(class_names):
-                        wandb_logs[f"val/conf_matrix_{class_name_i}_{class_name_j}"] = conf_matrix[i][j]
-                
-                # Also create wandb table using all predictions and true labels
-                try:
-                    wandb_logs["val/conf_matrix"] = wandb.plot.confusion_matrix(
-                        y_true=results['all_labels'],
-                        preds=results['all_preds'],
-                        class_names=class_names
-                    )
-                except Exception as e:
-                    print(f"Wandb confusion matrix visualization error: {e}")
-            else:
-                # Log confusion matrix directly
-                for i, class_name_i in enumerate(class_names):
-                    for j, class_name_j in enumerate(class_names):
-                        wandb_logs[f"val/conf_matrix_{class_name_i}_{class_name_j}"] = conf_matrix[i][j]
-            
-            wandb.log(wandb_logs)
-        
-        # Always save checkpoint at each validation interval
-        if iter_num > 0:
-            try:
-                checkpoint = {
-                    'model': raw_model.state_dict(),
-                    'optimizer': optimizer.state_dict(),
-                    'model_args': model_args,
-                    'iter_num': iter_num,
-                    'best_val_loss': best_val_loss,
-                    'config': config,
-                }
-                
-                # Ensure output directory exists
-                os.makedirs(checkpoint_dir, exist_ok=True)
-                
-                checkpoint_path = os.path.join(checkpoint_dir, 'ckpt.pt')
-                print(f"Saving checkpoint to {checkpoint_path}")
-                
-                # Save the checkpoint
-                torch.save(checkpoint, checkpoint_path)
-                
-                # Verify the checkpoint was saved successfully
-                if os.path.exists(checkpoint_path):
-                    print(f"Checkpoint saved successfully: {os.path.getsize(checkpoint_path) / (1024*1024):.2f} MB")
-                else:
-                    print(f"WARNING: Failed to save checkpoint to {checkpoint_path}")
-            except Exception as e:
-                print(f"ERROR saving checkpoint: {e}")
-                import traceback
-                traceback.print_exc()
-        
-    if iter_num == 0 and eval_only:
-        break
-
-    # Training loop
+    # Inner training loop
     for batch in train_loader:
         # Get batch
         input_ids = batch['input_ids'].to(device)
@@ -564,24 +458,135 @@ while True:
         running_loss += loss.item() * gradient_accumulation_steps
         
         # Logging
-        if iter_num % log_interval == 0 and master_process:
+        if iter_num % log_interval == 0 and iter_num > 0 and master_process:
             print(f"iter {iter_num}: loss {running_loss/log_interval:.4f}, lr {lr:.6f}")
             if wandb_log:
                 wandb.log({
-                    "iter": iter_num,
                     "train/loss": running_loss/log_interval,
                     "lr": lr,
-                })
+                }, step=iter_num)
             running_loss = 0.0
         
         # Update iteration counters
         iter_num += 1
         local_iter_num += 1
+
+        # Perform validation if iter_num is a multiple of validation_interval and iter_num > 0
+        if iter_num % validation_interval == 0 and iter_num > 0 and master_process:
+            print(f"\n--- Validation at iteration {iter_num} ---")
+            results = evaluate()
+            print(f"step {iter_num}: val loss {results['loss']:.4f}, val accuracy {results['accuracy']:.4f}")
+            
+            # Track best metrics
+            best_metrics = {}
+            if not hasattr(evaluate, 'best_metrics'):
+                evaluate.best_metrics = {
+                    'best_loss': float('inf'),
+                    'best_accuracy': 0.0,
+                    'best_f1': 0.0,
+                    'best_iter': 0
+                }
+            
+            # Update best results
+            if results['loss'] < evaluate.best_metrics['best_loss']:
+                evaluate.best_metrics['best_loss'] = results['loss'] 
+                evaluate.best_metrics['best_iter'] = iter_num
+            
+            if results['accuracy'] > evaluate.best_metrics['best_accuracy']:
+                evaluate.best_metrics['best_accuracy'] = results['accuracy']
+                
+            if results['f1_score'] > evaluate.best_metrics['best_f1']:
+                evaluate.best_metrics['best_f1'] = results['f1_score']
+            
+            # Log metrics to wandb
+            if wandb_log:
+                # Log detailed validation metrics to wandb
+                conf_matrix = results['confusion_matrix']
+                class_names = ['negative', 'neutral', 'positive']
+                
+                # Add class-specific metrics to the log
+                class_metrics = results['class_metrics']
+                wandb_logs = {
+                    "iter": iter_num,
+                    "val/loss": results['loss'],
+                    "val/accuracy": results['accuracy'],
+                    "val/f1_score": results['f1_score'],
+                    "lr": lr,
+                    "progress": iter_num / max_iters * 100,  # Progress percentage
+                    
+                    # Include best values
+                    "best/loss": evaluate.best_metrics['best_loss'],
+                    "best/accuracy": evaluate.best_metrics['best_accuracy'],
+                    "best/f1": evaluate.best_metrics['best_f1'],
+                    "best/iter": evaluate.best_metrics['best_iter']
+                }
+                
+                # Add class metrics
+                for metric_name, value in class_metrics.items():
+                    wandb_logs[f"val/{metric_name}"] = value
+                
+                # Log confusion matrix values
+                for i, class_name_i in enumerate(class_names):
+                    for j, class_name_j in enumerate(class_names):
+                        wandb_logs[f"val/conf_matrix_{class_name_i}_{class_name_j}"] = conf_matrix[i][j]
+                
+                # Log confusion matrix visualization if available
+                try:
+                    if hasattr(wandb, 'plot'):
+                        conf_plot = wandb.plot.confusion_matrix(
+                            y_true=results['all_labels'],
+                            preds=results['all_preds'],
+                            class_names=class_names
+                        )
+                        wandb_logs["val/conf_matrix_plot"] = conf_plot
+                except Exception as e:
+                    print(f"Wandb confusion matrix visualization error: {e}")
+                
+                # Log all metrics to wandb
+                print("Logging validation metrics to wandb...")
+                # --- Debug Print Added ---
+                print(f"[DEBUG] Logging to wandb at iter {iter_num}: {wandb_logs}")
+                # --- Debug Print End ---
+                wandb.log(wandb_logs, step=iter_num)
+                print("Wandb logging completed.")
+            
+            # Save checkpoint
+            try:
+                checkpoint = {
+                    'model': raw_model.state_dict(),
+                    'optimizer': optimizer.state_dict(),
+                    'model_args': model_args,
+                    'iter_num': iter_num,
+                    'best_val_loss': evaluate.best_metrics['best_loss'],
+                    'config': config,
+                }
+                
+                # Ensure output directory exists
+                os.makedirs(checkpoint_dir, exist_ok=True)
+                
+                checkpoint_path = os.path.join(checkpoint_dir, 'ckpt.pt')
+                print(f"Saving checkpoint to {checkpoint_path}")
+                
+                # Save the checkpoint
+                torch.save(checkpoint, checkpoint_path)
+                
+                # Verify the checkpoint was saved successfully
+                if os.path.exists(checkpoint_path):
+                    print(f"Checkpoint saved successfully: {os.path.getsize(checkpoint_path) / (1024*1024):.2f} MB")
+                else:
+                    print(f"WARNING: Failed to save checkpoint to {checkpoint_path}")
+            except Exception as e:
+                print(f"ERROR saving checkpoint: {e}")
+                import traceback
+                traceback.print_exc()
+            
+            print(f"--- End of validation at iteration {iter_num} ---\n")
         
-        # Check termination condition
+        # Check termination condition for the inner loop
         if iter_num >= max_iters:
             break
     
+    # Check termination condition for the outer loop
     if iter_num >= max_iters:
         break
 
