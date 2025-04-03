@@ -1,0 +1,140 @@
+Starting training
+Saving initial checkpoint to scratch-sentiment-gpt2\ckpt.pt
+Initial checkpoint saved successfully: 474.10 MB
+iter 50: loss 1.0397, lr 0.000000
+iter 100: loss 0.9178, lr 0.000009
+iter 150: loss 0.8322, lr 0.000018
+iter 200: loss 0.8203, lr 0.000018
+
+--- Validation at iteration 250 ---
+step 250: val loss 0.6432, val accuracy 0.7165
+Logging validation metrics to wandb...
+[DEBUG] Logging to wandb at iter 250: {'iter': 250, 'val/loss': 0.6431837677955627, 'val/accuracy': 0.7164948453608248, 'val/f1_score': 0.7099684182701004, 'lr': 2.6625e-05, 'progress': 12.5, 'best/loss': 0.6431837677955627, 'best/accuracy': 0.7164948453608248, 'best/f1': 0.7099684182701004, 'best/iter': 250, 'val/precision_negative': np.float64(0.6283185840707964), 'val/recall_negative': np.float64(0.8658536585365854), 'val/f1_negative': np.float64(0.7282051282051282), 'val/precision_neutral': np.float64(0.8395061728395061), 'val/recall_neutral': np.float64(0.6238532110091743), 'val/f1_neutral': np.float64(0.7157894736842105), 'val/precision_positive': np.float64(0.0), 'val/recall_positive': np.float64(0.0), 'val/f1_positive': np.float64(0.0), 'val/conf_matrix_negative_negative': np.int64(71), 'val/conf_matrix_negative_neutral': np.int64(11), 'val/conf_matrix_negative_positive': np.int64(0), 'val/conf_matrix_neutral_negative': np.int64(41), 'val/conf_matrix_neutral_neutral': np.int64(68), 'val/conf_matrix_neutral_positive': np.int64(0), 'val/conf_matrix_positive_negative': np.int64(1), 'val/conf_matrix_positive_neutral': np.int64(2), 'val/conf_matrix_positive_positive': np.int64(0), 'val/conf_matrix_plot': CustomChart(table=<wandb.sdk.data_types.table.Table object at 0x000002B310A803D0>, spec=CustomChartSpec(spec_name='wandb/confusion_matrix/v1', fields={'Actual': 'Actual', 'Predicted': 'Predicted', 'nPredictions': 'nPredictions'}, string_fields={'title': 'Confusion Matrix Curve'}, key='', panel_type='Vega2', split_table=False))}
+Wandb logging completed.
+Checkpoint save check at iter 250: always_save_checkpoint=True, current_val_loss=0.6432, best_val_loss_so_far=0.6432, is_best=False
+Saving checkpoint to scratch-sentiment-gpt2\ckpt.pt (Reason: always_save)
+Checkpoint saved successfully: 1422.33 MB
+--- End of validation at iteration 250 ---
+
+iter 250: loss 0.7243, lr 0.000027
+iter 300: loss 0.5534, lr 0.000036
+iter 350: loss 0.4966, lr 0.000036
+iter 400: loss 0.3648, lr 0.000044
+iter 450: loss 0.4299, lr 0.000050
+
+--- Validation at iteration 500 ---
+step 500: val loss 0.8281, val accuracy 0.7320
+Logging validation metrics to wandb...
+[DEBUG] Logging to wandb at iter 500: {'iter': 500, 'val/loss': 0.8280545473098755, 'val/accuracy': 0.7319587628865979, 'val/f1_score': 0.718207987451044, 'lr': 4.984563393995508e-05, 'progress': 25.0, 'best/loss': 0.6431837677955627, 'best/accuracy': 0.7319587628865979, 'best/f1': 0.718207987451044, 'best/iter': 250, 'val/precision_negative': np.float64(0.6212121212121212), 'val/recall_negative': np.float64(1.0), 'val/f1_negative': np.float64(0.7663551401869159), 'val/precision_neutral': np.float64(0.967741935483871), 'val/recall_neutral': np.float64(0.5504587155963303), 'val/f1_neutral': np.float64(0.7017543859649122), 'val/precision_positive': np.float64(0.0), 'val/recall_positive': np.float64(0.0), 'val/f1_positive': np.float64(0.0), 'val/conf_matrix_negative_negative': np.int64(82), 'val/conf_matrix_negative_neutral': np.int64(0), 'val/conf_matrix_negative_positive': np.int64(0), 'val/conf_matrix_neutral_negative': np.int64(49), 'val/conf_matrix_neutral_neutral': np.int64(60), 'val/conf_matrix_neutral_positive': np.int64(0), 'val/conf_matrix_positive_negative': np.int64(1), 'val/conf_matrix_positive_neutral': np.int64(2), 'val/conf_matrix_positive_positive': np.int64(0), 'val/conf_matrix_plot': CustomChart(table=<wandb.sdk.data_types.table.Table object at 0x000002B2F60232D0>, spec=CustomChartSpec(spec_name='wandb/confusion_matrix/v1', fields={'Actual': 'Actual', 'Predicted': 'Predicted', 'nPredictions': 'nPredictions'}, string_fields={'title': 'Confusion Matrix Curve'}, key='', panel_type='Vega2', split_table=False))}
+Wandb logging completed.
+Checkpoint save check at iter 500: always_save_checkpoint=True, current_val_loss=0.8281, best_val_loss_so_far=0.6432, is_best=False
+Saving checkpoint to scratch-sentiment-gpt2\ckpt.pt (Reason: always_save)
+Checkpoint saved successfully: 1422.33 MB
+--- End of validation at iteration 500 ---
+
+iter 500: loss 0.4019, lr 0.000050
+iter 550: loss 0.5647, lr 0.000050
+iter 600: loss 0.3778, lr 0.000050
+iter 650: loss 0.3257, lr 0.000049
+iter 700: loss 0.3481, lr 0.000049
+
+--- Validation at iteration 750 ---
+step 750: val loss 0.5489, val accuracy 0.8196
+Logging validation metrics to wandb...
+[DEBUG] Logging to wandb at iter 750: {'iter': 750, 'val/loss': 0.5488868355751038, 'val/accuracy': 0.8195876288659794, 'val/f1_score': 0.8052510683531454, 'lr': 4.84399261276768e-05, 'progress': 37.5, 'best/loss': 0.5488868355751038, 'best/accuracy': 0.8195876288659794, 'best/f1': 0.8052510683531454, 'best/iter': 750, 'val/precision_negative': np.float64(0.9807692307692307), 'val/recall_negative': np.float64(0.6219512195121951), 'val/f1_negative': np.float64(0.7611940298507462), 'val/precision_neutral': np.float64(0.7605633802816901), 'val/recall_neutral': np.float64(0.9908256880733946), 'val/f1_neutral': np.float64(0.8605577689243028), 'val/precision_positive': np.float64(0.0), 'val/recall_positive': np.float64(0.0), 'val/f1_positive': np.float64(0.0), 'val/conf_matrix_negative_negative': np.int64(51), 'val/conf_matrix_negative_neutral': np.int64(31), 'val/conf_matrix_negative_positive': np.int64(0), 'val/conf_matrix_neutral_negative': np.int64(1), 'val/conf_matrix_neutral_neutral': np.int64(108), 'val/conf_matrix_neutral_positive': np.int64(0), 'val/conf_matrix_positive_negative': np.int64(0), 'val/conf_matrix_positive_neutral': np.int64(3), 'val/conf_matrix_positive_positive': np.int64(0), 'val/conf_matrix_plot': CustomChart(table=<wandb.sdk.data_types.table.Table object at 0x000002B310AA0190>, spec=CustomChartSpec(spec_name='wandb/confusion_matrix/v1', fields={'Actual': 'Actual', 'Predicted': 'Predicted', 'nPredictions': 'nPredictions'}, string_fields={'title': 'Confusion Matrix Curve'}, key='', panel_type='Vega2', split_table=False))}
+Wandb logging completed.
+Checkpoint save check at iter 750: always_save_checkpoint=True, current_val_loss=0.5489, best_val_loss_so_far=0.5489, is_best=False
+Saving checkpoint to scratch-sentiment-gpt2\ckpt.pt (Reason: always_save)
+Checkpoint saved successfully: 1422.33 MB
+--- End of validation at iteration 750 ---
+
+iter 750: loss 0.3000, lr 0.000048
+iter 800: loss 0.3862, lr 0.000048
+iter 850: loss 0.3402, lr 0.000048
+iter 900: loss 0.2876, lr 0.000047
+iter 950: loss 0.2726, lr 0.000046
+
+--- Validation at iteration 1000 ---
+step 1000: val loss 0.4039, val accuracy 0.8557
+Logging validation metrics to wandb...
+[DEBUG] Logging to wandb at iter 1000: {'iter': 1000, 'val/loss': 0.4038611054420471, 'val/accuracy': 0.8556701030927835, 'val/f1_score': 0.8461103211280957, 'lr': 4.444921762887826e-05, 'progress': 50.0, 'best/loss': 0.4038611054420471, 'best/accuracy': 0.8556701030927835, 'best/f1': 0.8461103211280957, 'best/iter': 1000, 'val/precision_negative': np.float64(0.9523809523809523), 'val/recall_negative': np.float64(0.7317073170731707), 'val/f1_negative': np.float64(0.8275862068965517), 'val/precision_neutral': np.float64(0.8091603053435115), 'val/recall_neutral': np.float64(0.9724770642201835), 'val/f1_neutral': np.float64(0.8833333333333333), 'val/precision_positive': np.float64(0.0), 'val/recall_positive': np.float64(0.0), 'val/f1_positive': np.float64(0.0), 'val/conf_matrix_negative_negative': np.int64(60), 'val/conf_matrix_negative_neutral': np.int64(22), 'val/conf_matrix_negative_positive': np.int64(0), 'val/conf_matrix_neutral_negative': np.int64(3), 'val/conf_matrix_neutral_neutral': np.int64(106), 'val/conf_matrix_neutral_positive': np.int64(0), 'val/conf_matrix_positive_negative': np.int64(0), 'val/conf_matrix_positive_neutral': np.int64(3), 'val/conf_matrix_positive_positive': np.int64(0), 'val/conf_matrix_plot': CustomChart(table=<wandb.sdk.data_types.table.Table object at 0x000002B2D13A8650>, spec=CustomChartSpec(spec_name='wandb/confusion_matrix/v1', fields={'Actual': 'Actual', 'Predicted': 'Predicted', 'nPredictions': 'nPredictions'}, string_fields={'title': 'Confusion Matrix Curve'}, key='', panel_type='Vega2', split_table=False))}
+Wandb logging completed.
+Checkpoint save check at iter 1000: always_save_checkpoint=True, current_val_loss=0.4039, best_val_loss_so_far=0.4039, is_best=False
+Saving checkpoint to scratch-sentiment-gpt2\ckpt.pt (Reason: always_save)
+Checkpoint saved successfully: 1422.33 MB
+--- End of validation at iteration 1000 ---
+
+iter 1000: loss 0.2793, lr 0.000044
+iter 1050: loss 0.2848, lr 0.000044
+iter 1100: loss 0.2779, lr 0.000043
+iter 1150: loss 0.2982, lr 0.000042
+iter 1200: loss 0.3823, lr 0.000042
+
+--- Validation at iteration 1250 ---
+step 1250: val loss 0.6486, val accuracy 0.7423
+Logging validation metrics to wandb...
+[DEBUG] Logging to wandb at iter 1250: {'iter': 1250, 'val/loss': 0.6486170887947083, 'val/accuracy': 0.7422680412371134, 'val/f1_score': 0.728931742659476, 'lr': 4.012438105155218e-05, 'progress': 62.5, 'best/loss': 0.4038611054420471, 'best/accuracy': 0.8556701030927835, 'best/f1': 0.8461103211280957, 'best/iter': 1000, 'val/precision_negative': np.float64(0.6356589147286822), 'val/recall_negative': np.float64(1.0), 'val/f1_negative': np.float64(0.7772511848341233), 'val/precision_neutral': np.float64(0.9538461538461539), 'val/recall_neutral': np.float64(0.5688073394495413), 'val/f1_neutral': np.float64(0.7126436781609196), 'val/precision_positive': np.float64(0.0), 'val/recall_positive': np.float64(0.0), 'val/f1_positive': np.float64(0.0), 'val/conf_matrix_negative_negative': np.int64(82), 'val/conf_matrix_negative_neutral': np.int64(0), 'val/conf_matrix_negative_positive': np.int64(0), 'val/conf_matrix_neutral_negative': np.int64(47), 'val/conf_matrix_neutral_neutral': np.int64(62), 'val/conf_matrix_neutral_positive': np.int64(0), 'val/conf_matrix_positive_negative': np.int64(0), 'val/conf_matrix_positive_neutral': np.int64(3), 'val/conf_matrix_positive_positive': np.int64(0), 'val/conf_matrix_plot': CustomChart(table=<wandb.sdk.data_types.table.Table object at 0x000002B310AE6B90>, spec=CustomChartSpec(spec_name='wandb/confusion_matrix/v1', fields={'Actual': 'Actual', 'Predicted': 'Predicted', 'nPredictions': 'nPredictions'}, string_fields={'title': 'Confusion Matrix Curve'}, key='', panel_type='Vega2', split_table=False))}
+Wandb logging completed.
+Checkpoint save check at iter 1250: always_save_checkpoint=True, current_val_loss=0.6486, best_val_loss_so_far=0.4039, is_best=False
+Saving checkpoint to scratch-sentiment-gpt2\ckpt.pt (Reason: always_save)
+Checkpoint saved successfully: 1422.33 MB
+--- End of validation at iteration 1250 ---
+
+iter 1250: loss 0.3332, lr 0.000040
+iter 1300: loss 0.3327, lr 0.000038
+iter 1350: loss 0.2079, lr 0.000037
+iter 1400: loss 0.1998, lr 0.000037
+iter 1450: loss 0.1641, lr 0.000035
+
+--- Validation at iteration 1500 ---
+step 1500: val loss 0.3397, val accuracy 0.8814
+Logging validation metrics to wandb...
+[DEBUG] Logging to wandb at iter 1500: {'iter': 1500, 'val/loss': 0.339729905128479, 'val/accuracy': 0.8814432989690721, 'val/f1_score': 0.8746654631257226, 'lr': 3.3121851104386705e-05, 'progress': 75.0, 'best/loss': 0.339729905128479, 'best/accuracy': 0.8814432989690721, 'best/f1': 0.8746654631257226, 'best/iter': 1500, 'val/precision_negative': np.float64(0.8604651162790697), 'val/recall_negative': np.float64(0.9024390243902439), 'val/f1_negative': np.float64(0.8809523809523809), 'val/precision_neutral': np.float64(0.8981481481481481), 'val/recall_neutral': np.float64(0.8899082568807339), 'val/f1_neutral': np.float64(0.8940092165898618), 'val/precision_positive': np.float64(0.0), 'val/recall_positive': np.float64(0.0), 'val/f1_positive': np.float64(0.0), 'val/conf_matrix_negative_negative': np.int64(74), 'val/conf_matrix_negative_neutral': np.int64(8), 'val/conf_matrix_negative_positive': np.int64(0), 'val/conf_matrix_neutral_negative': np.int64(12), 'val/conf_matrix_neutral_neutral': np.int64(97), 'val/conf_matrix_neutral_positive': np.int64(0), 'val/conf_matrix_positive_negative': np.int64(0), 'val/conf_matrix_positive_neutral': np.int64(3), 'val/conf_matrix_positive_positive': np.int64(0), 'val/conf_matrix_plot': CustomChart(table=<wandb.sdk.data_types.table.Table object at 0x000002B310A95810>, spec=CustomChartSpec(spec_name='wandb/confusion_matrix/v1', fields={'Actual': 'Actual', 'Predicted': 'Predicted', 'nPredictions': 'nPredictions'}, string_fields={'title': 'Confusion Matrix Curve'}, key='', panel_type='Vega2', split_table=False))}
+Wandb logging completed.
+Checkpoint save check at iter 1500: always_save_checkpoint=True, current_val_loss=0.3397, best_val_loss_so_far=0.3397, is_best=False
+Saving checkpoint to scratch-sentiment-gpt2\ckpt.pt (Reason: always_save)
+Checkpoint saved successfully: 1422.33 MB
+--- End of validation at iteration 1500 ---
+
+iter 1500: loss 0.1913, lr 0.000033
+iter 1550: loss 0.1688, lr 0.000033
+iter 1600: loss 0.1716, lr 0.000031
+iter 1650: loss 0.1392, lr 0.000029
+iter 1700: loss 0.1042, lr 0.000029
+
+--- Validation at iteration 1750 ---
+step 1750: val loss 0.4621, val accuracy 0.8557
+Logging validation metrics to wandb...
+[DEBUG] Logging to wandb at iter 1750: {'iter': 1750, 'val/loss': 0.4620766341686249, 'val/accuracy': 0.8556701030927835, 'val/f1_score': 0.856801051565153, 'lr': 2.739125298538085e-05, 'progress': 87.5, 'best/loss': 0.339729905128479, 'best/accuracy': 0.8814432989690721, 'best/f1': 0.8746654631257226, 'best/iter': 1500, 'val/precision_negative': np.float64(0.8933333333333333), 'val/recall_negative': np.float64(0.8170731707317073), 'val/f1_negative': np.float64(0.8535031847133758), 'val/precision_neutral': np.float64(0.8521739130434782), 'val/recall_neutral': np.float64(0.8990825688073395), 'val/f1_neutral': np.float64(0.875), 'val/precision_positive': np.float64(0.25), 'val/recall_positive': np.float64(0.3333333333333333), 'val/f1_positive': np.float64(0.2857142857142857), 'val/conf_matrix_negative_negative': np.int64(67), 'val/conf_matrix_negative_neutral': np.int64(15), 'val/conf_matrix_negative_positive': np.int64(0), 'val/conf_matrix_neutral_negative': np.int64(8), 'val/conf_matrix_neutral_neutral': np.int64(98), 'val/conf_matrix_neutral_positive': np.int64(3), 'val/conf_matrix_positive_negative': np.int64(0), 'val/conf_matrix_positive_neutral': np.int64(2), 'val/conf_matrix_positive_positive': np.int64(1), 'val/conf_matrix_plot': CustomChart(table=<wandb.sdk.data_types.table.Table object at 0x000002B310A63150>, spec=CustomChartSpec(spec_name='wandb/confusion_matrix/v1', fields={'Actual': 'Actual', 'Predicted': 'Predicted', 'nPredictions': 'nPredictions'}, string_fields={'title': 'Confusion Matrix Curve'}, key='', panel_type='Vega2', split_table=False))}
+Wandb logging completed.
+Checkpoint save check at iter 1750: always_save_checkpoint=True, current_val_loss=0.4621, best_val_loss_so_far=0.3397, is_best=False
+Saving checkpoint to scratch-sentiment-gpt2\ckpt.pt (Reason: always_save)
+Checkpoint saved successfully: 1422.33 MB
+--- End of validation at iteration 1750 ---
+
+iter 1750: loss 0.0963, lr 0.000027
+iter 1800: loss 0.1031, lr 0.000025
+iter 1850: loss 0.0645, lr 0.000024
+iter 1900: loss 0.0907, lr 0.000024
+iter 1950: loss 0.0743, lr 0.000022
+
+--- Validation at iteration 2000 ---
+step 2000: val loss 0.4653, val accuracy 0.8711
+Logging validation metrics to wandb...
+[DEBUG] Logging to wandb at iter 2000: {'iter': 2000, 'val/loss': 0.4653170704841614, 'val/accuracy': 0.8711340206185567, 'val/f1_score': 0.8666824604709101, 'lr': 1.9827259912808556e-05, 'progress': 100.0, 'best/loss': 0.339729905128479, 'best/accuracy': 0.8814432989690721, 'best/f1': 0.8746654631257226, 'best/iter': 1500, 'val/precision_negative': np.float64(0.8426966292134831), 'val/recall_negative': np.float64(0.9146341463414634), 'val/f1_negative': np.float64(0.8771929824561403), 'val/precision_neutral': np.float64(0.9038461538461539), 'val/recall_neutral': np.float64(0.8623853211009175), 'val/f1_neutral': np.float64(0.8826291079812206), 'val/precision_positive': np.float64(0.0), 'val/recall_positive': np.float64(0.0), 'val/f1_positive': np.float64(0.0), 'val/conf_matrix_negative_negative': np.int64(75), 'val/conf_matrix_negative_neutral': np.int64(7), 'val/conf_matrix_negative_positive': np.int64(0), 'val/conf_matrix_neutral_negative': np.int64(14), 'val/conf_matrix_neutral_neutral': np.int64(94), 'val/conf_matrix_neutral_positive': np.int64(1), 'val/conf_matrix_positive_negative': np.int64(0), 'val/conf_matrix_positive_neutral': np.int64(3), 'val/conf_matrix_positive_positive': np.int64(0), 'val/conf_matrix_plot': CustomChart(table=<wandb.sdk.data_types.table.Table object at 0x000002B310A72ED0>, spec=CustomChartSpec(spec_name='wandb/confusion_matrix/v1', fields={'Actual': 'Actual', 'Predicted': 'Predicted', 'nPredictions': 'nPredictions'}, string_fields={'title': 'Confusion Matrix Curve'}, key='', panel_type='Vega2', split_table=False))}
+Wandb logging completed.
+Checkpoint save check at iter 2000: always_save_checkpoint=True, current_val_loss=0.4653, best_val_loss_so_far=0.3397, is_best=False
+Saving checkpoint to scratch-sentiment-gpt2\ckpt.pt (Reason: always_save)
+Checkpoint saved successfully: 1422.33 MB
+--- End of validation at iteration 2000 ---
+
+Final results: val loss 0.4653, val accuracy 0.8711, val f1 0.8667
+Confusion Matrix:
+[[75  7  0]
+ [14 94  1]
+ [ 0  3  0]]
+
+Class-specific metrics:
+  Negative -  Precision: 0.8427,  Recall: 0.9146,  F1: 0.8772
+  Neutral -  Precision: 0.9038,  Recall: 0.8624,  F1: 0.8826
+  Positive -  Precision: 0.0000,  Recall: 0.0000,  F1: 0.0000

@@ -1,0 +1,26 @@
+--- Test Results ---
+Model: pretrained-sentiment-gpt2
+Checkpoint Path: .\pretrained-sentiment-gpt2\ckpt.pt
+Test Set: data/subdata/test.csv
+
+Accuracy: 0.9000
+F1 Score (Weighted): 0.8977
+
+Classification Report:
+              precision    recall  f1-score   support
+
+    negative       1.00      1.00      1.00        10
+     neutral       0.77      1.00      0.87        10
+    positive       1.00      0.70      0.82        10
+
+    accuracy                           0.90        30
+   macro avg       0.92      0.90      0.90        30
+weighted avg       0.92      0.90      0.90        30
+
+
+Confusion Matrix:
+       negative    neutral     positive  
+negative  10         0          0         
+neutral   0          10         0         
+positive  0          3          7         
+---------------------------------------------

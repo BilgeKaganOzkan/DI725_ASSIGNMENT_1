@@ -1,0 +1,16 @@
+{"time":"2025-04-04T01:19:28.9507921+03:00","level":"INFO","msg":"stream: starting","core version":"0.19.8","symlink path":"C:\\Users\\GOKTURK\\DI725_ASSIGNMENT_1\\wandb\\run-20250404_011928-n46rkatn\\logs\\debug-core.log"}
+{"time":"2025-04-04T01:19:29.3591004+03:00","level":"INFO","msg":"created new stream","id":"n46rkatn"}
+{"time":"2025-04-04T01:19:29.3591004+03:00","level":"INFO","msg":"stream: started","id":"n46rkatn"}
+{"time":"2025-04-04T01:19:29.3591004+03:00","level":"INFO","msg":"writer: Do: started","stream_id":"n46rkatn"}
+{"time":"2025-04-04T01:19:29.3591004+03:00","level":"INFO","msg":"handler: started","stream_id":"n46rkatn"}
+{"time":"2025-04-04T01:19:29.3591004+03:00","level":"INFO","msg":"sender: started","stream_id":"n46rkatn"}
+{"time":"2025-04-04T01:19:29.713526+03:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-04-04T01:19:45.9457452+03:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-04-04T01:19:45.9474928+03:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-04-04T01:19:46.9509689+03:00","level":"INFO","msg":"handler: operation stats","stats":{"operations":[{"desc":"uploading artifact run-n46rkatn-scratch-sentiment-gpt2testconfusion_matrix_plot_table","runtime_seconds":1.0949571}],"total_operations":1}}
+{"time":"2025-04-04T01:19:47.7612417+03:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-04-04T01:19:48.0623798+03:00","level":"INFO","msg":"stream: closing","id":"n46rkatn"}
+{"time":"2025-04-04T01:19:48.0623798+03:00","level":"INFO","msg":"handler: closed","stream_id":"n46rkatn"}
+{"time":"2025-04-04T01:19:48.0623798+03:00","level":"INFO","msg":"writer: Close: closed","stream_id":"n46rkatn"}
+{"time":"2025-04-04T01:19:48.0623798+03:00","level":"INFO","msg":"sender: closed","stream_id":"n46rkatn"}
+{"time":"2025-04-04T01:19:48.0623798+03:00","level":"INFO","msg":"stream: closed","id":"n46rkatn"}

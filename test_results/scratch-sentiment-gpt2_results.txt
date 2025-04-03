@@ -1,0 +1,26 @@
+--- Test Results ---
+Model: scratch-sentiment-gpt2
+Checkpoint Path: .\scratch-sentiment-gpt2\ckpt.pt
+Test Set: data/subdata/test.csv
+
+Accuracy: 0.6667
+F1 Score (Weighted): 0.5986
+
+Classification Report:
+              precision    recall  f1-score   support
+
+    negative       1.00      0.90      0.95        10
+     neutral       0.50      1.00      0.67        10
+    positive       1.00      0.10      0.18        10
+
+    accuracy                           0.67        30
+   macro avg       0.83      0.67      0.60        30
+weighted avg       0.83      0.67      0.60        30
+
+
+Confusion Matrix:
+       negative    neutral     positive  
+negative  9          1          0         
+neutral   0          10         0         
+positive  0          9          1         
+---------------------------------------------

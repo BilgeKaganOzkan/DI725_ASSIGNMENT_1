@@ -30,6 +30,7 @@ import torch
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
 from torch.utils.data import Dataset, DataLoader
+from torch import bincount
 from sklearn.metrics import accuracy_score, f1_score, confusion_matrix, precision_score, recall_score
 from transformers import GPT2Tokenizer  # Import GPT-2 tokenizer
 import torch.nn.functional as F
@@ -40,13 +41,25 @@ from model.model import GPTConfig, GPT
 # Custom dataset for sentiment analysis with CSV files
 class SentimentDataset(Dataset):
     def __init__(self, csv_path, block_size=1024):
-        self.df = pd.read_csv(csv_path)
+        try:
+            self.df = pd.read_csv(csv_path)
+        except FileNotFoundError:
+            print(f"ERROR: CSV file not found at {csv_path}")
+            raise # Re-raise the exception
+        except Exception as e:
+            print(f"ERROR loading CSV {csv_path}: {e}")
+            raise
+
         self.block_size = block_size
         
         print(f"Loading data from {csv_path}")
         
         # Initialize the GPT2 tokenizer
-        self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+        try:
+            self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+        except Exception as e:
+             print(f"ERROR initializing tokenizer: {e}")
+             raise
         # If needed, set padding token
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -57,12 +70,12 @@ class SentimentDataset(Dataset):
         
         for idx, row in self.df.iterrows():
             # Get prompt text
-            if 'prompt' in row:
+            if 'prompt' in row and pd.notna(row['prompt']): # Check for NaN prompts
                 text = str(row['prompt'])
                 # Use GPT2 tokenizer instead of character-level tokenization
                 tokens = self.tokenizer.encode(
                     text,
-                    add_special_tokens=True,  # Add [CLS], [SEP]
+                    add_special_tokens=True,  # Add [CLS], [SEP] may not be needed for GPT2, but okay
                     max_length=block_size,    # Truncate to block_size
                     truncation=True           # Truncate to max_length
                 )
@@ -76,20 +89,41 @@ class SentimentDataset(Dataset):
                 self.examples.append(tokens)
                 
                 # Get sentiment label
-                if 'customer_sentiment' in row:
-                    sentiment = row['customer_sentiment']
+                if 'customer_sentiment' in row and pd.notna(row['customer_sentiment']):
+                    sentiment = str(row['customer_sentiment']).lower() # Ensure lowercase
                     sentiment_map = {'negative': 0, 'neutral': 1, 'positive': 2}
-                    sentiment_idx = sentiment_map.get(sentiment, 1)  # Default to neutral
-                    self.labels.append(sentiment_idx)
+                    sentiment_idx = sentiment_map.get(sentiment, -1) # Use -1 for unknown labels first
+                    if sentiment_idx != -1:
+                        self.labels.append(sentiment_idx)
+                    else:
+                         print(f"Warning: Unknown sentiment label '{sentiment}' at row {idx}. Defaulting to neutral (1).")
+                         self.labels.append(1) # Default to neutral if label is unknown or invalid
+                         # Ensure the example is kept even if label defaults
                 else:
-                    # Default to neutral if no label is provided
+                    # Default to neutral if no label is provided or label is NaN
+                    # print(f"Warning: Missing or invalid 'customer_sentiment' at row {idx}. Defaulting to neutral (1).")
                     self.labels.append(1)
+            else:
+                print(f"Warning: Missing or invalid 'prompt' at row {idx}. Skipping row.")
         
         print(f"Loaded {len(self.examples)} examples from {csv_path}")
         
         # Print some stats about token lengths
         lengths = [len(x) for x in self.examples]
-        print(f"Average token length: {sum(lengths)/len(lengths):.1f}, Max: {max(lengths)}, Min: {min(lengths)}")
+        if lengths: # Avoid division by zero if no examples loaded
+            print(f"Average token length: {sum(lengths)/len(lengths):.1f}, Max: {max(lengths)}, Min: {min(lengths)}")
+            # Ensure labels is a standard Python list for bincount compatibility later
+            self.labels = list(self.labels)
+            # Check if number of labels matches number of examples
+            if len(self.labels) != len(self.examples):
+                 print(f"ERROR: Mismatch between number of examples ({len(self.examples)}) and labels ({len(self.labels)}) in {csv_path}")
+                 # Handle mismatch: either raise error or try to reconcile (e.g., remove last example if label is missing)
+                 # For now, let's raise an error to make it obvious
+                 raise ValueError(f"Example and label count mismatch in {csv_path}")
+
+        else:
+            print("No valid examples were loaded.")
+            self.labels = [] # Ensure labels is an empty list if no examples
     
     def __len__(self):
         return len(self.examples)
@@ -146,6 +180,11 @@ backend = 'nccl' # 'nccl', 'gloo', etc.
 device = 'cuda' # examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1' etc., or try 'mps' on macbooks
 dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16' # 'float32', 'bfloat16', or 'float16', the latter will auto implement a GradScaler
 compile = True # use PyTorch 2.0 to compile the model to be faster
+# --- Weighted Loss Config ---
+use_weighted_loss = True # Set to True to enable weighted loss
+# --- Class Names (consistent with preprocessing/testing) ---
+CLASS_NAMES = ['negative', 'neutral', 'positive']
+NUM_CLASSES = len(CLASS_NAMES)
 # -----------------------------------------------------------------------------
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
 exec(open('configurator.py').read()) # overrides from command line or config file
@@ -191,42 +230,126 @@ ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torc
 ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 
 # Setup data loaders for sentiment analysis
-def get_data_loaders():
-    data_dir = os.path.join('data', dataset)
+def get_data_loaders(block_size, batch_size, dataset_name, ddp_enabled, pin_memory, num_classes):
+    data_dir = os.path.join('data', dataset_name)
     
     # Train dataset
-    train_dataset = SentimentDataset(
-        csv_path=os.path.join(data_dir, 'train.csv'),
-        block_size=block_size
-    )
-    
+    train_csv_path = os.path.join(data_dir, 'train.csv')
+    print(f"Attempting to load training data from: {train_csv_path}")
+    try:
+        train_dataset = SentimentDataset(
+            csv_path=train_csv_path,
+            block_size=block_size
+        )
+        if len(train_dataset) == 0:
+             print(f"ERROR: No valid examples loaded from training data {train_csv_path}. Check file content and preprocessing steps.")
+             exit(1)
+    except FileNotFoundError:
+        print(f"ERROR: Training data file not found at {train_csv_path}")
+        exit(1)
+    except Exception as e:
+        print(f"ERROR loading training data: {e}")
+        exit(1)
+
     # Validation dataset
-    val_dataset = SentimentDataset(
-        csv_path=os.path.join(data_dir, 'validation.csv'),
-        block_size=block_size
-    )
-    
-    # Train loader
+    val_csv_path = os.path.join(data_dir, 'validation.csv')
+    print(f"Attempting to load validation data from: {val_csv_path}")
+    try:
+        val_dataset = SentimentDataset(
+            csv_path=val_csv_path,
+            block_size=block_size
+        )
+        if len(val_dataset) == 0:
+             print(f"WARNING: No valid examples loaded from validation data {val_csv_path}. Validation metrics might be unreliable.")
+             # Decide whether to exit or continue without validation
+             # exit(1)
+    except FileNotFoundError:
+        print(f"ERROR: Validation data file not found at {val_csv_path}")
+        # Optionally allow training to continue without validation
+        val_dataset = None # Set to None if validation is optional
+        # exit(1)
+    except Exception as e:
+        print(f"ERROR loading validation data: {e}")
+        # Optionally allow training to continue without validation
+        val_dataset = None
+        # exit(1)
+
+    # --- Calculate class weights for training data ---
+    class_weights = None
+    global use_weighted_loss # Allow modification of global flag if needed
+    if use_weighted_loss:
+        try:
+            print("Calculating class weights for weighted loss...")
+            # Ensure labels are available and are standard list/tensor
+            if not train_dataset.labels:
+                 raise ValueError("Training dataset labels are empty.")
+
+            train_labels_tensor = torch.tensor(train_dataset.labels, dtype=torch.long)
+
+            # Ensure tensor is not empty
+            if train_labels_tensor.numel() == 0:
+                 raise ValueError("Training labels tensor is empty after conversion.")
+
+            # Use torch.bincount
+            label_counts = bincount(train_labels_tensor, minlength=num_classes) # Ensure length matches num_classes
+            print(f"Label counts: {label_counts.tolist()}")
+
+            # Prevent division by zero for classes not present
+            label_counts = label_counts.float() + 1e-6 # Use float for division
+
+            # Inverse frequency weighting
+            weights = 1.0 / label_counts
+            weights = weights / weights.sum() # Normalize weights
+
+            class_weights = weights.to(device) # Move weights to the correct device
+            print(f"Calculated class weights (moved to {device}): {class_weights.tolist()}")
+        except Exception as e:
+            print(f"WARNING: Failed to calculate class weights: {e}. Proceeding without weighted loss.")
+            use_weighted_loss = False # Disable if calculation fails
+
+    # Train loader setup
+    train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset) if ddp_enabled else None
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
-        shuffle=not ddp,
-        sampler=torch.utils.data.distributed.DistributedSampler(train_dataset) if ddp else None,
-        pin_memory=True,
+        shuffle=(train_sampler is None), # Shuffle only if not using DDP sampler
+        sampler=train_sampler,
+        pin_memory=pin_memory,
+        num_workers=0 # Usually 0 for simplicity, adjust if I/O is bottleneck
     )
-    
-    # Validation loader
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        pin_memory=True,
-    )
-    
-    return train_loader, val_loader
 
-# Load data
-train_loader, val_loader = get_data_loaders()
+    # Validation loader setup (only if val_dataset was loaded)
+    val_loader = None
+    if val_dataset:
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            pin_memory=pin_memory,
+            num_workers=0
+        )
+    else:
+         print("Validation loader not created as validation dataset failed to load.")
+
+    return train_loader, val_loader, class_weights
+
+# Load data and potentially calculate class weights
+train_loader, val_loader, class_weights = get_data_loaders(
+    block_size=block_size,
+    batch_size=batch_size,
+    dataset_name=dataset,
+    ddp_enabled=ddp,
+    pin_memory=(device_type == 'cuda'), # Only pin if using CUDA
+    num_classes=NUM_CLASSES # Use defined NUM_CLASSES
+)
+
+# Ensure class_weights is defined even if use_weighted_loss was disabled during calculation
+if not use_weighted_loss:
+    class_weights = None # Explicitly set to None if disabled
+    print("Weighted loss is disabled.")
+elif class_weights is None: # Check if it remained None after attempted calculation
+    print("WARNING: Weighted loss was enabled, but weights calculation failed or resulted in None. Disabling weighted loss.")
+    use_weighted_loss = False
 
 # init these up here, can override if init_from='resume' (i.e. from a checkpoint)
 iter_num = 0
@@ -234,7 +357,7 @@ best_val_loss = 1e9
 
 # model init
 model_args = dict(n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=block_size,
-                  bias=bias, vocab_size=None, dropout=dropout) # start with model_args from command line
+                  bias=bias, vocab_size=None, dropout=dropout, num_classes=NUM_CLASSES) # Use NUM_CLASSES
 if init_from == 'scratch':
     # init a new model from scratch
     print("Initializing a new model from scratch")
@@ -305,7 +428,13 @@ if ddp:
 # Evaluate function for sentiment analysis
 @torch.no_grad()
 def evaluate():
-    model.eval()
+    # Ensure val_loader exists before proceeding
+    if val_loader is None:
+         print("Skipping evaluation because validation data loader is not available.")
+         return None # Return None to indicate evaluation didn't run
+
+    eval_model = model.module if ddp else model # Use raw model for eval
+    eval_model.eval()
     losses = []
     all_preds = []
     all_labels = []
@@ -324,15 +453,17 @@ def evaluate():
         all_labels.extend(labels.cpu().numpy())
     
     # Calculate metrics
+    mean_loss = torch.tensor(losses).mean().item() if losses else float('nan') # Handle empty losses list
     accuracy = accuracy_score(all_labels, all_preds)
     f1 = f1_score(all_labels, all_preds, average='weighted')
-    conf_matrix = confusion_matrix(all_labels, all_preds)
+    # Ensure labels=[0, 1, 2] to handle cases where a class might be missing in the validation set
+    conf_matrix = confusion_matrix(all_labels, all_preds, labels=list(range(NUM_CLASSES)))
     
     # Calculate class-specific metrics
-    class_names = ['negative', 'neutral', 'positive']
-    precision_per_class = precision_score(all_labels, all_preds, average=None, zero_division=0)
-    recall_per_class = recall_score(all_labels, all_preds, average=None, zero_division=0)
-    f1_per_class = f1_score(all_labels, all_preds, average=None, zero_division=0)
+    class_names = CLASS_NAMES # Use global CLASS_NAMES
+    precision_per_class = precision_score(all_labels, all_preds, average=None, zero_division=0, labels=list(range(NUM_CLASSES)))
+    recall_per_class = recall_score(all_labels, all_preds, average=None, zero_division=0, labels=list(range(NUM_CLASSES)))
+    f1_per_class = f1_score(all_labels, all_preds, average=None, zero_division=0, labels=list(range(NUM_CLASSES)))
     
     class_metrics = {}
     for i, class_name in enumerate(class_names):
@@ -341,7 +472,7 @@ def evaluate():
         class_metrics[f'f1_{class_name}'] = f1_per_class[i]
     
     results = {
-        'loss': torch.tensor(losses).mean().item(),
+        'loss': mean_loss,
         'accuracy': accuracy,
         'f1_score': f1,
         'confusion_matrix': conf_matrix,
@@ -550,35 +681,50 @@ while True:
                 wandb.log(wandb_logs, step=iter_num)
                 print("Wandb logging completed.")
             
+            # --- Checkpoint save condition debug print ---
+            if master_process: # Only print on master process
+                # Check if evaluate.best_metrics exists before accessing
+                best_loss_so_far = evaluate.best_metrics['best_loss'] if hasattr(evaluate, 'best_metrics') else float('inf')
+                is_best = results['loss'] < best_loss_so_far
+                print(f"Checkpoint save check at iter {iter_num}: always_save_checkpoint={always_save_checkpoint}, current_val_loss={results['loss']:.4f}, best_val_loss_so_far={best_loss_so_far:.4f}, is_best={is_best}")
+            # --- End debug print ---
+
             # Save checkpoint
-            try:
-                checkpoint = {
-                    'model': raw_model.state_dict(),
-                    'optimizer': optimizer.state_dict(),
-                    'model_args': model_args,
-                    'iter_num': iter_num,
-                    'best_val_loss': evaluate.best_metrics['best_loss'],
-                    'config': config,
-                }
-                
-                # Ensure output directory exists
-                os.makedirs(checkpoint_dir, exist_ok=True)
-                
-                checkpoint_path = os.path.join(checkpoint_dir, 'ckpt.pt')
-                print(f"Saving checkpoint to {checkpoint_path}")
-                
-                # Save the checkpoint
-                torch.save(checkpoint, checkpoint_path)
-                
-                # Verify the checkpoint was saved successfully
-                if os.path.exists(checkpoint_path):
-                    print(f"Checkpoint saved successfully: {os.path.getsize(checkpoint_path) / (1024*1024):.2f} MB")
-                else:
-                    print(f"WARNING: Failed to save checkpoint to {checkpoint_path}")
-            except Exception as e:
-                print(f"ERROR saving checkpoint: {e}")
-                import traceback
-                traceback.print_exc()
+            # Determine if we should save based on the logic *after* calculating is_best
+            should_save = always_save_checkpoint or is_best
+            if should_save:
+                try:
+                    checkpoint = {
+                        'model': raw_model.state_dict(),
+                        'optimizer': optimizer.state_dict(),
+                        'model_args': model_args,
+                        'iter_num': iter_num,
+                        # Save the loss that triggered the save (or current best)
+                        'best_val_loss': evaluate.best_metrics['best_loss'], 
+                        'config': config,
+                    }
+                    
+                    # Ensure output directory exists
+                    os.makedirs(checkpoint_dir, exist_ok=True)
+                    
+                    checkpoint_path = os.path.join(checkpoint_dir, 'ckpt.pt')
+                    temp_checkpoint_path = checkpoint_path + ".tmp"
+                    print(f"Saving checkpoint to {checkpoint_path} (Reason: {'always_save' if always_save_checkpoint else ''}{' and ' if always_save_checkpoint and is_best else ''}{'is_best' if is_best else ''})")
+                    
+                    # Save the checkpoint to temp file first
+                    torch.save(checkpoint, temp_checkpoint_path)
+                    # Rename temp file to final path (atomic operation on most systems)
+                    os.replace(temp_checkpoint_path, checkpoint_path)
+                    
+                    # Verify the checkpoint was saved successfully
+                    if os.path.exists(checkpoint_path):
+                        print(f"Checkpoint saved successfully: {os.path.getsize(checkpoint_path) / (1024*1024):.2f} MB")
+                    else:
+                        print(f"WARNING: Failed to save checkpoint to {checkpoint_path} (file not found after replace)")
+                except Exception as e:
+                    print(f"ERROR saving checkpoint: {e}")
+                    import traceback
+                    traceback.print_exc()
             
             print(f"--- End of validation at iteration {iter_num} ---\n")
         
